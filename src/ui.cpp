@@ -104,7 +104,7 @@ void DrawOrbitPath(float radius, float inclinationDeg, Color color)
     }
 }
 
-void DrawSpaceObject(const OrbitObject &object, bool highlighted)
+void DrawSpaceObject(const OrbitObject &object, Color frameColor)
 {
     const float size = object.type == ObjectType::Satellite ? 8.0f : 5.5f;
 
@@ -119,9 +119,9 @@ void DrawSpaceObject(const OrbitObject &object, bool highlighted)
         DrawSphereWires(object.position, size, 8, 8, Fade(WHITE, 0.55f));
     }
 
-    if (highlighted)
+    if (frameColor.a > 0)
     {
-        DrawSphereWires(object.position, size + 6.0f, 16, 12, WHITE);
+        DrawSphereWires(object.position, size + 6.0f, 16, 12, frameColor);
     }
 }
 
@@ -239,6 +239,80 @@ void DrawModeTitle(const char *title, const char *subtitle)
     DrawText(subtitle, 40, 60, 15, Fade(RAYWHITE, 0.68f));
 }
 
+void DrawSolarSystemBackground()
+{
+    DrawStarField();
+    DrawCircleGradient({88.0f, 128.0f}, 92.0f, Color{255, 183, 82, 82}, Color{255, 183, 82, 0});
+    DrawCircle(86, 126, 28.0f, Color{255, 213, 128, 170});
+    DrawCircleGradient({1130.0f, 148.0f}, 26.0f, Color{201, 105, 78, 120}, Color{201, 105, 78, 0});
+    DrawCircle(1130, 148, 10.0f, Color{185, 88, 63, 180});
+    DrawCircleGradient({1080.0f, 570.0f}, 42.0f, Color{82, 148, 215, 70}, Color{82, 148, 215, 0});
+}
+
+void DrawOrbitLayerBands()
+{
+    DrawOrbitPath(85.0f, 0.0f, Fade(SKYBLUE, 0.16f));
+    DrawOrbitPath(145.0f, 0.0f, Fade(SKYBLUE, 0.22f));
+    DrawOrbitPath(230.0f, 0.0f, Fade(GOLD, 0.22f));
+    DrawOrbitPath(330.0f, 0.0f, Fade(VIOLET, 0.20f));
+}
+
+void DrawImmediateEventBanner(const ImmediateEventState &event, const UnknownScanState &scan)
+{
+    if (event.type == ImmediateEventType::None || event.phase == ImmediateEventPhase::Inactive)
+    {
+        return;
+    }
+
+    const Color accent = event.type == ImmediateEventType::CollisionWarning ? RED : SKYBLUE;
+    DrawRectangle(310, 24, 590, 86, {7, 12, 20, 235});
+    DrawRectangle(310, 24, 8, 86, accent);
+    DrawRectangleLines(310, 24, 590, 86, Fade(accent, 0.62f));
+    DrawText(event.title.c_str(), 334, 36, 24, accent);
+    DrawText(event.detail.c_str(), 336, 64, 16, RAYWHITE);
+
+    std::string action = event.action;
+    if (scan.scanning)
+    {
+        action = "Scanning progress: " + FormatFloat(scan.progress * 100.0f, 0) + "%";
+    }
+    if (!event.result.empty())
+    {
+        action = event.result;
+    }
+    DrawText(action.c_str(), 336, 88, 15, Fade(RAYWHITE, 0.78f));
+}
+
+Color SelectedFrameColor(const ImmediateEventState &event,
+                         const EarthMissionState &earthMission,
+                         const std::vector<OrbitObject> &objects,
+                         int selectedObjectIndex)
+{
+    if (selectedObjectIndex < 0 || selectedObjectIndex >= static_cast<int>(objects.size()))
+    {
+        return BLANK;
+    }
+
+    if (event.targetIndex == selectedObjectIndex)
+    {
+        if (event.type == ImmediateEventType::CollisionWarning)
+        {
+            return event.phase == ImmediateEventPhase::Resolved ? LIME : ORANGE;
+        }
+        if (event.type == ImmediateEventType::UnknownObject)
+        {
+            return SKYBLUE;
+        }
+    }
+
+    if (objects[selectedObjectIndex].userControlled && earthMission.playerSatDeployed)
+    {
+        return YELLOW;
+    }
+
+    return BLANK;
+}
+
 void DrawInfoPanel(const RiskReport &report,
                    const std::vector<OrbitObject> &objects,
                    bool paused,
@@ -248,11 +322,17 @@ void DrawInfoPanel(const RiskReport &report,
                    const LaunchSettings &launchSettings,
                    const AvoidancePlan &avoidancePlan,
                    const MissionState &missionState,
+                   const EarthMissionState &earthMission,
+                   const ImmediateEventState &activeEvent,
+                   const UnknownScanState &unknownScan,
                    bool showDemoObjects,
                    int selectedObjectIndex,
                    float actionMessageTimer,
                    const std::string &actionMessage)
 {
+    (void)activeEvent;
+    (void)unknownScan;
+
     constexpr int panelX = 890;
     constexpr int panelWidth = 374;
     constexpr int panelY = 18;
@@ -307,6 +387,14 @@ void DrawInfoPanel(const RiskReport &report,
              y,
              14,
              RAYWHITE);
+    y += 16;
+    DrawText(TextFormat("Layer %s  |  Target %s",
+                        OrbitLayerText(ClassifyOrbitLayer(launchSettings.orbitRadius)),
+                        OrbitLayerText(earthMission.targetLayer)),
+             contentX,
+             y,
+             14,
+             earthMission.deploymentComplete ? LIME : SKYBLUE);
     y += 20;
 
     DrawText("Selected Target", contentX, y, 15, sectionColor);
@@ -336,7 +424,7 @@ void DrawInfoPanel(const RiskReport &report,
     y += 16;
     DrawText(TextFormat("Mission: %s", MissionStepTitle(missionState.currentStep)), contentX, y, 14, sectionColor);
 
-    std::string promptText = missionState.nextActionText;
+    std::string promptText = earthMission.playerSatDeployed ? missionState.nextActionText : earthMission.nextAction;
     Color promptColor = SKYBLUE;
 
     if (exportMessageTimer > 0.0f && missionState.hasSavedMissionReport)

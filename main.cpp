@@ -148,6 +148,10 @@ int main()
             objects = CreateDemoObjects();
             simulationTime = 0.0f;
             ResetMissionState(missionState);
+            earthMission = EarthMissionState{};
+            ResetImmediateEvent(activeEvent);
+            avoidanceAnimation = AvoidanceAnimationState{};
+            unknownScan = UnknownScanState{};
             selectedObjectIndex = -1;
             exportMessageTimer = 0.0f;
             actionMessage = "Simulation reset. User satellites were cleared.";
@@ -252,6 +256,14 @@ int main()
         RiskReport report = AnalyzeRisk(objects, showDemoObjects, selectedObjectIndex);
         AvoidancePlan avoidancePlan = BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
         UpdateMissionState(missionState, report, avoidancePlan, objects);
+        if (FindPlayerSatelliteIndex(objects) >= 0)
+        {
+            UpdateEarthMissionAfterLaunch(earthMission, objects);
+        }
+        else
+        {
+            UpdateEarthMissionBeforeLaunch(earthMission, launchSettings);
+        }
 
         if (IsKeyPressed(KEY_A))
         {
@@ -321,9 +333,10 @@ int main()
 
         BeginDrawing();
         ClearBackground({3, 6, 12, 255});
-        DrawStarField();
+        DrawSolarSystemBackground();
 
         BeginMode3D(camera);
+        DrawOrbitLayerBands();
         DrawGrid(24, 24.0f);
         DrawSphere({0.0f, 0.0f, 0.0f}, kEarthRadius, {31, 108, 188, 255});
         DrawSphereWires({0.0f, 0.0f, 0.0f}, kEarthRadius + 0.5f, 24, 16, Fade(SKYBLUE, 0.45f));
@@ -348,7 +361,7 @@ int main()
         previewObject.angleRad = launchSettings.initialAngleDeg * kDegToRad;
         previewObject.position = CalculateOrbitPosition(previewObject.orbitRadius, previewObject.inclinationDeg, previewObject.angleRad);
         previewObject.color = Fade(YELLOW, 0.65f);
-        DrawSpaceObject(previewObject, true);
+        DrawSpaceObject(previewObject, Fade(YELLOW, 0.75f));
 
         if (report.firstIndex >= 0 && report.secondIndex >= 0)
         {
@@ -362,12 +375,13 @@ int main()
                 continue;
             }
 
-            const bool highlighted = i == selectedObjectIndex || i == report.firstIndex || i == report.secondIndex;
-            DrawSpaceObject(objects[i], highlighted);
+            const Color frameColor = i == selectedObjectIndex ? SelectedFrameColor(activeEvent, earthMission, objects, selectedObjectIndex) : BLANK;
+            DrawSpaceObject(objects[i], frameColor);
         }
         EndMode3D();
 
-        DrawInfoPanel(report, objects, paused, timeScale, simulationTime, exportMessageTimer, launchSettings, avoidancePlan, missionState, showDemoObjects, selectedObjectIndex, actionMessageTimer, actionMessage);
+        DrawImmediateEventBanner(activeEvent, unknownScan);
+        DrawInfoPanel(report, objects, paused, timeScale, simulationTime, exportMessageTimer, launchSettings, avoidancePlan, missionState, earthMission, activeEvent, unknownScan, showDemoObjects, selectedObjectIndex, actionMessageTimer, actionMessage);
         DrawControls();
         if (showLaunchHelp)
         {
