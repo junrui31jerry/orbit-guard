@@ -229,6 +229,14 @@ void UpdateMissionState(MissionState &mission,
 bool MissionStepCompleted(const MissionState &mission, MissionStep step, RiskLevel currentRiskLevel);
 const char *MissionStepTitle(MissionStep step);
 const char *MissionStepStatusText(const MissionState &mission, MissionStep step, RiskLevel currentRiskLevel);
+void UpdateEarthMissionBeforeLaunch(EarthMissionState &mission, const LaunchSettings &settings);
+void UpdateEarthMissionAfterLaunch(EarthMissionState &mission, const std::vector<OrbitObject> &objects);
+void ResetImmediateEvent(ImmediateEventState &event);
+void StartCollisionWarning(ImmediateEventState &event, int targetIndex, const std::string &targetName);
+void StartUnknownObjectEvent(ImmediateEventState &event, UnknownScanState &scan, int objectIndex);
+bool CanStartUnknownScan(const ImmediateEventState &event, const UnknownScanState &scan, int selectedObjectIndex);
+void BeginUnknownScan(ImmediateEventState &event, UnknownScanState &scan);
+void UpdateUnknownScan(ImmediateEventState &event, UnknownScanState &scan, float deltaTime);
 
 std::string FormatFloat(float value, int precision = 1);
 std::string PairName(const RiskReport &report, const std::vector<OrbitObject> &objects);
