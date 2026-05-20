@@ -88,6 +88,11 @@ int main()
     bool showDemoObjects = true;
     int selectedObjectIndex = -1;
     std::string actionMessage;
+    ShipState solarShip;
+    ShipState blackHoleShip;
+    bool blackHoleTransferred = false;
+    ResetShip(solarShip, {0.0f, 0.0f, 330.0f}, 0.0f);
+    ResetShip(blackHoleShip, {0.0f, 0.0f, 330.0f}, 0.0f);
 
     while (!WindowShouldClose() && !shouldClose)
     {
@@ -134,6 +139,30 @@ int main()
         if (IsKeyPressed(KEY_ESCAPE))
         {
             gameMode = GameMode::MainMenu;
+            continue;
+        }
+
+        if (gameMode == GameMode::SolarSystem)
+        {
+            UpdateShipFromInput(solarShip, deltaTime);
+            BeginDrawing();
+            ClearBackground({3, 6, 12, 255});
+            DrawSolarSystemMode(solarShip);
+            EndDrawing();
+            continue;
+        }
+
+        if (gameMode == GameMode::BlackHole)
+        {
+            UpdateShipFromInput(blackHoleShip, deltaTime);
+            if (!blackHoleTransferred && IsInsideBlackHoleTransferRange(blackHoleShip, 130.0f))
+            {
+                blackHoleTransferred = true;
+            }
+            BeginDrawing();
+            ClearBackground({3, 6, 12, 255});
+            DrawBlackHoleMode(blackHoleShip, blackHoleTransferred);
+            EndDrawing();
             continue;
         }
 
@@ -390,19 +419,6 @@ int main()
         EndDrawing();
         continue;
         }
-
-        BeginDrawing();
-        ClearBackground({3, 6, 12, 255});
-        DrawStarField();
-        if (gameMode == GameMode::SolarSystem)
-        {
-            DrawModeTitle("Solar System Simulator", "Playable ship prototype arrives in the next task.");
-        }
-        else
-        {
-            DrawModeTitle("Black Hole World Simulator", "Playable ship prototype arrives in the next task.");
-        }
-        EndDrawing();
     }
 
     CloseWindow();

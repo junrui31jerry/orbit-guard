@@ -245,6 +245,13 @@ void UpdateAvoidanceAnimation(AvoidanceAnimationState &animation,
                               ImmediateEventState &event,
                               std::vector<OrbitObject> &objects,
                               float deltaTime);
+void ResetShip(ShipState &ship, Vector3 position, float yaw);
+void UpdateShipFromInput(ShipState &ship, float deltaTime);
+void MoveShipForward(ShipState &ship, float deltaTime, float speed);
+bool IsInsideBlackHoleTransferRange(const ShipState &ship, float eventHorizonRadius);
+void DrawShip(const ShipState &ship, Color color);
+void DrawSolarSystemMode(const ShipState &ship);
+void DrawBlackHoleMode(const ShipState &ship, bool transferred);
 
 std::string FormatFloat(float value, int precision = 1);
 std::string PairName(const RiskReport &report, const std::vector<OrbitObject> &objects);
