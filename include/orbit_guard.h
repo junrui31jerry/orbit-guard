@@ -34,6 +34,38 @@ enum class RiskLevel
     High
 };
 
+enum class GameMode
+{
+    MainMenu,
+    EarthSpace,
+    SolarSystem,
+    BlackHole
+};
+
+enum class OrbitLayer
+{
+    BelowOperational,
+    LEO,
+    MEO,
+    GEO,
+    BeyondOperational
+};
+
+enum class ImmediateEventType
+{
+    None,
+    CollisionWarning,
+    UnknownObject
+};
+
+enum class ImmediateEventPhase
+{
+    Inactive,
+    WaitingForPlayer,
+    Animating,
+    Resolved
+};
+
 struct OrbitObject
 {
     std::string name;
@@ -106,8 +138,63 @@ struct MissionState
     std::string nextActionText = "Next: Adjust orbit settings, then press L to launch.";
 };
 
+struct EarthMissionState
+{
+    OrbitLayer targetLayer = OrbitLayer::MEO;
+    bool playerSatDeployed = false;
+    bool deploymentComplete = false;
+    std::string title = "Deploy PlayerSat to MEO orbit";
+    std::string description = "Ground stations need a medium-orbit relay. Adjust Orbit Radius into MEO, then press L.";
+    std::string nextAction = "Adjust Orbit Radius into MEO, then press L to deploy PlayerSat.";
+};
+
+struct ImmediateEventState
+{
+    ImmediateEventType type = ImmediateEventType::None;
+    ImmediateEventPhase phase = ImmediateEventPhase::Inactive;
+    int targetIndex = -1;
+    float timer = 0.0f;
+    std::string title;
+    std::string detail;
+    std::string action;
+    std::string result;
+};
+
+struct AvoidanceAnimationState
+{
+    bool active = false;
+    int objectIndex = -1;
+    float elapsed = 0.0f;
+    float duration = 1.8f;
+    OrbitObject startObject = {};
+    OrbitObject endObject = {};
+    float beforeDistance = 0.0f;
+    float afterDistance = 0.0f;
+};
+
+struct UnknownScanState
+{
+    bool objectActive = false;
+    bool scanning = false;
+    bool identified = false;
+    int objectIndex = -1;
+    float progress = 0.0f;
+    ObjectType revealedType = ObjectType::Debris;
+};
+
+struct ShipState
+{
+    Vector3 position = {0.0f, 0.0f, 260.0f};
+    float yaw = 0.0f;
+    float speed = 0.0f;
+};
+
 float ClampFloat(float value, float minimum, float maximum);
 Vector3 CalculateOrbitPosition(float radius, float inclinationDeg, float angleRad);
+OrbitLayer ClassifyOrbitLayer(float orbitRadius);
+const char *OrbitLayerText(OrbitLayer layer);
+bool IsOrbitLayerMatch(OrbitLayer layer, float orbitRadius);
+Color OrbitLayerColor(OrbitLayer layer);
 const char *LaunchFieldName(int selectedField);
 void AdjustLaunchSettings(LaunchSettings &settings, float direction, bool largeStep);
 OrbitObject CreateUserSatellite(LaunchSettings &settings);

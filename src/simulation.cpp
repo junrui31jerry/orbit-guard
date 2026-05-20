@@ -20,6 +20,66 @@ Vector3 CalculateOrbitPosition(float radius, float inclinationDeg, float angleRa
     return {x, y, z};
 }
 
+OrbitLayer ClassifyOrbitLayer(float orbitRadius)
+{
+    if (orbitRadius < 85.0f)
+    {
+        return OrbitLayer::BelowOperational;
+    }
+    if (orbitRadius <= 145.0f)
+    {
+        return OrbitLayer::LEO;
+    }
+    if (orbitRadius <= 230.0f)
+    {
+        return OrbitLayer::MEO;
+    }
+    if (orbitRadius <= 330.0f)
+    {
+        return OrbitLayer::GEO;
+    }
+    return OrbitLayer::BeyondOperational;
+}
+
+const char *OrbitLayerText(OrbitLayer layer)
+{
+    switch (layer)
+    {
+    case OrbitLayer::LEO:
+        return "LEO";
+    case OrbitLayer::MEO:
+        return "MEO";
+    case OrbitLayer::GEO:
+        return "GEO";
+    case OrbitLayer::BelowOperational:
+        return "Below operational orbit";
+    case OrbitLayer::BeyondOperational:
+        return "Beyond operational orbit";
+    default:
+        return "Unknown orbit";
+    }
+}
+
+bool IsOrbitLayerMatch(OrbitLayer layer, float orbitRadius)
+{
+    return ClassifyOrbitLayer(orbitRadius) == layer;
+}
+
+Color OrbitLayerColor(OrbitLayer layer)
+{
+    switch (layer)
+    {
+    case OrbitLayer::LEO:
+        return SKYBLUE;
+    case OrbitLayer::MEO:
+        return GOLD;
+    case OrbitLayer::GEO:
+        return VIOLET;
+    default:
+        return Fade(RAYWHITE, 0.45f);
+    }
+}
+
 const char *LaunchFieldName(int selectedField)
 {
     switch (selectedField)
