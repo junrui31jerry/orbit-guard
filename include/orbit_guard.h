@@ -258,6 +258,8 @@ bool ExportRiskReport(const RiskReport &report,
 void DrawStarField();
 void DrawOrbitPath(float radius, float inclinationDeg, Color color);
 void DrawSpaceObject(const OrbitObject &object, bool highlighted);
+void DrawMainMenu(int selectedMenuItem);
+void DrawModeTitle(const char *title, const char *subtitle);
 int DrawWrappedText(const std::string &text, int x, int y, int maxWidth, int fontSize, int spacing, Color color);
 void DrawInfoPanel(const RiskReport &report,
                    const std::vector<OrbitObject> &objects,

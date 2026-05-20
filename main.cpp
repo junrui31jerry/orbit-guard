@@ -67,6 +67,8 @@ int main()
     camera.fovy = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
+    GameMode gameMode = GameMode::MainMenu;
+    int selectedMenuItem = 0;
     OrbitCameraState cameraState;
     std::vector<OrbitObject> objects = CreateDemoObjects();
     LaunchSettings launchSettings;
@@ -91,6 +93,52 @@ int main()
     {
         const float deltaTime = GetFrameTime();
 
+        if (gameMode == GameMode::MainMenu)
+        {
+            if (IsKeyPressed(KEY_DOWN))
+            {
+                selectedMenuItem = (selectedMenuItem + 1) % 3;
+            }
+            if (IsKeyPressed(KEY_UP))
+            {
+                selectedMenuItem = (selectedMenuItem + 2) % 3;
+            }
+            if (IsKeyPressed(KEY_ONE))
+            {
+                gameMode = GameMode::EarthSpace;
+            }
+            if (IsKeyPressed(KEY_TWO))
+            {
+                gameMode = GameMode::SolarSystem;
+            }
+            if (IsKeyPressed(KEY_THREE))
+            {
+                gameMode = GameMode::BlackHole;
+            }
+            if (IsKeyPressed(KEY_ENTER))
+            {
+                gameMode = selectedMenuItem == 0 ? GameMode::EarthSpace : (selectedMenuItem == 1 ? GameMode::SolarSystem : GameMode::BlackHole);
+            }
+            if (IsKeyPressed(KEY_ESCAPE))
+            {
+                shouldClose = true;
+            }
+
+            BeginDrawing();
+            ClearBackground({3, 6, 12, 255});
+            DrawMainMenu(selectedMenuItem);
+            EndDrawing();
+            continue;
+        }
+
+        if (IsKeyPressed(KEY_ESCAPE))
+        {
+            gameMode = GameMode::MainMenu;
+            continue;
+        }
+
+        if (gameMode == GameMode::EarthSpace)
+        {
         if (IsKeyPressed(KEY_SPACE))
         {
             paused = !paused;
@@ -324,6 +372,21 @@ int main()
         if (showLaunchHelp)
         {
             DrawLaunchHelpOverlay(launchSettings);
+        }
+        EndDrawing();
+        continue;
+        }
+
+        BeginDrawing();
+        ClearBackground({3, 6, 12, 255});
+        DrawStarField();
+        if (gameMode == GameMode::SolarSystem)
+        {
+            DrawModeTitle("Solar System Simulator", "Playable ship prototype arrives in the next task.");
+        }
+        else
+        {
+            DrawModeTitle("Black Hole World Simulator", "Playable ship prototype arrives in the next task.");
         }
         EndDrawing();
     }

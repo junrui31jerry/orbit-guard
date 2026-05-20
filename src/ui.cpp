@@ -208,6 +208,37 @@ void DrawMissionRow(int x, int y, int width, MissionStep step, const MissionStat
 }
 } // namespace
 
+void DrawMainMenu(int selectedMenuItem)
+{
+    DrawStarField();
+    DrawRectangle(0, 0, kScreenWidth, kScreenHeight, {2, 5, 12, 190});
+    DrawText("OrbitGuard", 96, 96, 54, RAYWHITE);
+    DrawText("Space Simulator Platform", 100, 156, 24, Fade(RAYWHITE, 0.72f));
+
+    const char *items[] = {
+        "1  Earth Space Simulator",
+        "2  Solar System Simulator",
+        "3  Black Hole World Simulator"};
+
+    for (int i = 0; i < 3; ++i)
+    {
+        const int y = 245 + i * 82;
+        const bool selected = i == selectedMenuItem;
+        DrawRectangle(96, y, 620, 58, selected ? Color{28, 56, 82, 230} : Color{12, 22, 34, 210});
+        DrawRectangleLines(96, y, 620, 58, selected ? SKYBLUE : Fade(SKYBLUE, 0.30f));
+        DrawText(items[i], 122, y + 17, 22, selected ? RAYWHITE : Fade(RAYWHITE, 0.78f));
+    }
+
+    DrawText("Use 1 / 2 / 3 or Up / Down + Enter. Esc quits.", 100, 548, 18, Fade(RAYWHITE, 0.66f));
+}
+
+void DrawModeTitle(const char *title, const char *subtitle)
+{
+    DrawRectangle(20, 18, 430, 64, {4, 8, 14, 190});
+    DrawText(title, 38, 30, 26, RAYWHITE);
+    DrawText(subtitle, 40, 60, 15, Fade(RAYWHITE, 0.68f));
+}
+
 void DrawInfoPanel(const RiskReport &report,
                    const std::vector<OrbitObject> &objects,
                    bool paused,
