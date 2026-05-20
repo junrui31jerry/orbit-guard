@@ -237,6 +237,14 @@ void StartUnknownObjectEvent(ImmediateEventState &event, UnknownScanState &scan,
 bool CanStartUnknownScan(const ImmediateEventState &event, const UnknownScanState &scan, int selectedObjectIndex);
 void BeginUnknownScan(ImmediateEventState &event, UnknownScanState &scan);
 void UpdateUnknownScan(ImmediateEventState &event, UnknownScanState &scan, float deltaTime);
+bool BeginAvoidanceAnimation(AvoidanceAnimationState &animation,
+                             ImmediateEventState &event,
+                             const std::vector<OrbitObject> &objects,
+                             const AvoidancePlan &plan);
+void UpdateAvoidanceAnimation(AvoidanceAnimationState &animation,
+                              ImmediateEventState &event,
+                              std::vector<OrbitObject> &objects,
+                              float deltaTime);
 
 std::string FormatFloat(float value, int precision = 1);
 std::string PairName(const RiskReport &report, const std::vector<OrbitObject> &objects);

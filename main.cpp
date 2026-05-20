@@ -71,6 +71,10 @@ int main()
     std::vector<OrbitObject> objects = CreateDemoObjects();
     LaunchSettings launchSettings;
     MissionState missionState;
+    EarthMissionState earthMission;
+    ImmediateEventState activeEvent;
+    AvoidanceAnimationState avoidanceAnimation;
+    UnknownScanState unknownScan;
 
     bool paused = false;
     bool shouldClose = false;
@@ -171,6 +175,8 @@ int main()
             simulationTime += deltaTime * timeScale;
             UpdateObjects(objects, deltaTime, timeScale);
         }
+        UpdateAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, deltaTime);
+        UpdateUnknownScan(activeEvent, unknownScan, deltaTime);
 
         UpdateOrbitCamera(cameraState, camera);
 
@@ -203,12 +209,22 @@ int main()
         {
             if (avoidancePlan.available)
             {
-                ApplyAvoidancePlan(objects, avoidancePlan);
-                MarkMissionAvoidanceApplied(missionState);
-                report = AnalyzeRisk(objects, showDemoObjects, selectedObjectIndex);
-                avoidancePlan = BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
-                UpdateMissionState(missionState, report, avoidancePlan, objects);
-                actionMessage = "Avoidance applied: user satellite orbit was adjusted.";
+                if (activeEvent.type == ImmediateEventType::CollisionWarning)
+                {
+                    if (BeginAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, avoidancePlan))
+                    {
+                        MarkMissionAvoidanceApplied(missionState);
+                        actionMessage = "Avoidance burn started.";
+                    }
+                    else
+                    {
+                        actionMessage = activeEvent.result;
+                    }
+                }
+                else
+                {
+                    actionMessage = "No active collision warning.";
+                }
             }
             else
             {

@@ -106,4 +106,63 @@ void UpdateUnknownScan(ImmediateEventState &event, UnknownScanState &scan, float
         event.action = "Scan complete. Continue monitoring PlayerSat.";
     }
 }
+
+bool BeginAvoidanceAnimation(AvoidanceAnimationState &animation,
+                             ImmediateEventState &event,
+                             const std::vector<OrbitObject> &objects,
+                             const AvoidancePlan &plan)
+{
+    if (!plan.available || plan.objectIndex < 0 || plan.objectIndex >= static_cast<int>(objects.size()))
+    {
+        event.result = "No safe avoidance burn is available. Adjust orbit or continue monitoring.";
+        return false;
+    }
+
+    animation.active = true;
+    animation.objectIndex = plan.objectIndex;
+    animation.elapsed = 0.0f;
+    animation.duration = 1.8f;
+    animation.startObject = objects[plan.objectIndex];
+    animation.endObject = plan.proposedObject;
+    animation.beforeDistance = plan.beforeDistance;
+    animation.afterDistance = plan.afterDistance;
+
+    event.phase = ImmediateEventPhase::Animating;
+    event.action = "Avoidance burn in progress...";
+    event.result.clear();
+    return true;
+}
+
+void UpdateAvoidanceAnimation(AvoidanceAnimationState &animation,
+                              ImmediateEventState &event,
+                              std::vector<OrbitObject> &objects,
+                              float deltaTime)
+{
+    if (!animation.active || animation.objectIndex < 0 || animation.objectIndex >= static_cast<int>(objects.size()))
+    {
+        return;
+    }
+
+    animation.elapsed += deltaTime;
+    const float t = ClampFloat(animation.elapsed / animation.duration, 0.0f, 1.0f);
+    OrbitObject &object = objects[animation.objectIndex];
+    object.orbitRadius = animation.startObject.orbitRadius + (animation.endObject.orbitRadius - animation.startObject.orbitRadius) * t;
+    object.inclinationDeg = animation.startObject.inclinationDeg + (animation.endObject.inclinationDeg - animation.startObject.inclinationDeg) * t;
+    object.angularSpeed = animation.startObject.angularSpeed + (animation.endObject.angularSpeed - animation.startObject.angularSpeed) * t;
+    RefreshObjectPosition(object);
+
+    if (t >= 1.0f)
+    {
+        object = animation.endObject;
+        RefreshObjectPosition(object);
+        animation.active = false;
+        event.phase = ImmediateEventPhase::Resolved;
+        event.result = "Avoidance success: distance improved from " +
+                       FormatFloat(animation.beforeDistance, 1) +
+                       " to " +
+                       FormatFloat(animation.afterDistance, 1) +
+                       ".";
+        event.action = "Avoidance complete. Continue monitoring PlayerSat.";
+    }
+}
 } // namespace OrbitGuard
