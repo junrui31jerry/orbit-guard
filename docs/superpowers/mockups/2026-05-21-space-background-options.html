@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OrbitGuard Background Options</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #05070d;
+      color: #eef4ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 50% -10%, rgba(50, 95, 120, 0.22), transparent 42%),
+        #05070d;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 34px 0 42px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      font-weight: 720;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0 0 28px;
+      color: rgba(238, 244, 255, 0.72);
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .option {
+      border: 1px solid rgba(144, 190, 255, 0.22);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(9, 15, 26, 0.92);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+    }
+
+    .scene {
+      position: relative;
+      height: 290px;
+      overflow: hidden;
+      border-bottom: 1px solid rgba(144, 190, 255, 0.18);
+    }
+
+    .scene::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        radial-gradient(circle, rgba(255, 255, 255, 0.95) 0 1px, transparent 1.5px),
+        radial-gradient(circle, rgba(170, 220, 255, 0.85) 0 1px, transparent 1.5px);
+      background-size: 37px 41px, 83px 91px;
+      opacity: 0.42;
+    }
+
+    .sun {
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      filter: blur(0.2px);
+      background: radial-gradient(circle, #fff6ca 0 19%, #ffb044 48%, rgba(255, 128, 37, 0.04) 72%);
+      box-shadow: 0 0 65px rgba(255, 166, 66, 0.88);
+    }
+
+    .planet {
+      position: absolute;
+      border-radius: 50%;
+    }
+
+    .earth {
+      width: 76px;
+      height: 76px;
+      left: 42%;
+      top: 38%;
+      background:
+        radial-gradient(circle at 64% 28%, rgba(255, 255, 255, 0.46), transparent 16%),
+        radial-gradient(circle at 38% 40%, #2fa36f 0 16%, transparent 17%),
+        radial-gradient(circle at 60% 62%, #2a7abc 0 29%, #174a8d 63%, #09254c 100%);
+      box-shadow: 0 0 28px rgba(70, 152, 255, 0.55);
+    }
+
+    .orbit {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      border: 1px solid rgba(155, 205, 255, 0.32);
+      border-radius: 50%;
+      transform: translate(-50%, -50%) rotate(-14deg);
+    }
+
+    .sat {
+      position: absolute;
+      width: 18px;
+      height: 10px;
+      background: #ffd24a;
+      box-shadow: 0 0 12px rgba(255, 210, 74, 0.55);
+    }
+
+    .warning {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      top: 18px;
+      padding: 10px 12px;
+      border-left: 4px solid #ff704d;
+      background: rgba(20, 26, 36, 0.82);
+      color: #fff2e8;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .scene-a {
+      background:
+        radial-gradient(circle at 8% 32%, rgba(255, 169, 74, 0.32), transparent 26%),
+        radial-gradient(circle at 86% 62%, rgba(65, 124, 185, 0.24), transparent 30%),
+        linear-gradient(150deg, #07111d, #030610 68%);
+    }
+
+    .scene-a .sun {
+      left: -78px;
+      top: 54px;
+    }
+
+    .scene-a .mars {
+      width: 32px;
+      height: 32px;
+      right: 62px;
+      top: 72px;
+      background: radial-gradient(circle at 38% 28%, #f6ad78, #a14f38 70%);
+    }
+
+    .scene-b {
+      background:
+        radial-gradient(circle at 50% 42%, rgba(60, 138, 210, 0.19), transparent 34%),
+        linear-gradient(180deg, #07131f, #05070d 70%);
+    }
+
+    .scene-b .orbit:nth-of-type(1) {
+      width: 138px;
+      height: 70px;
+    }
+
+    .scene-b .orbit:nth-of-type(2) {
+      width: 210px;
+      height: 104px;
+      border-color: rgba(255, 212, 91, 0.42);
+    }
+
+    .scene-b .orbit:nth-of-type(3) {
+      width: 286px;
+      height: 142px;
+      border-color: rgba(124, 226, 255, 0.28);
+    }
+
+    .scene-b .sat {
+      left: 63%;
+      top: 46%;
+      transform: rotate(-12deg);
+    }
+
+    .scene-c {
+      background:
+        radial-gradient(circle at 66% 28%, rgba(42, 190, 255, 0.18), transparent 22%),
+        radial-gradient(circle at 24% 72%, rgba(185, 87, 255, 0.14), transparent 28%),
+        linear-gradient(135deg, #02030a, #07101d 72%);
+    }
+
+    .scene-c .sun {
+      width: 96px;
+      height: 96px;
+      right: 36px;
+      top: 34px;
+      opacity: 0.8;
+    }
+
+    .scene-c .earth {
+      left: 18%;
+      top: 48%;
+    }
+
+    .body {
+      padding: 18px 18px 20px;
+    }
+
+    h2 {
+      margin: 0 0 8px;
+      font-size: 19px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: rgba(238, 244, 255, 0.7);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .tag {
+      display: inline-block;
+      margin-bottom: 11px;
+      color: #98d7ff;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    @media (max-width: 920px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>地球外太空模擬器背景方向</h1>
+    <p class="subtitle">三個方向都會保留清楚的衛星、軌道與警告可讀性。差別在於背景存在感與太陽系氛圍強弱。</p>
+
+    <section class="grid" aria-label="background options">
+      <article class="option">
+        <div class="scene scene-a">
+          <div class="sun"></div>
+          <div class="planet mars"></div>
+          <div class="earth"></div>
+        </div>
+        <div class="body">
+          <span class="tag">Option A</span>
+          <h2>遠方太陽系背景</h2>
+          <p>在地球軌道背後加入遠方太陽光、火星或行星剪影。合理、好看，也能清楚暗示玩家身處太陽系。</p>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="scene scene-b">
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="earth"></div>
+          <div class="sat"></div>
+          <div class="warning">COLLISION WARNING<br>Press A to perform avoidance burn</div>
+        </div>
+        <div class="body">
+          <span class="tag">Option B</span>
+          <h2>任務可讀性優先</h2>
+          <p>背景較暗，軌道分層、衛星與警告最清楚。比較適合期末展示，評審能一眼看懂互動。</p>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="scene scene-c">
+          <div class="sun"></div>
+          <div class="earth"></div>
+        </div>
+        <div class="body">
+          <span class="tag">Option C</span>
+          <h2>電影感深空</h2>
+          <p>星雲與光暈更明顯，視覺最有氣氛，但需要控制亮度，避免干擾目標框、未知物體和風險警告。</p>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

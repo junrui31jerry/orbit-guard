@@ -1,0 +1,33 @@
+# Build outputs
+*.o
+*.obj
+*.exe
+*.dll
+*.a
+*.lib
+*.pdb
+*.ilk
+
+# Generated reports and local IDE state
+orbit_guard_report.txt
+*.layout
+
+# Downloaded installers and local dependency archives
+downloads/
+*Setup.exe
+*.msi
+*.zip
+*.7z
+
+# Large proposal/export artifacts kept outside source history
+*.docx
+*.pdf
+
+# Local Superpowers/browser session scratch files
+.superpowers/
+
+# OS/editor noise
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
