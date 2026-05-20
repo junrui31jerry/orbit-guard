@@ -144,6 +144,61 @@ OrbitObject CreateUserSatellite(LaunchSettings &settings)
     return object;
 }
 
+OrbitObject CreatePlayerSatellite(const LaunchSettings &settings)
+{
+    OrbitObject object;
+    object.name = "PlayerSat";
+    object.type = ObjectType::Satellite;
+    object.orbitRadius = settings.orbitRadius;
+    object.inclinationDeg = settings.inclinationDeg;
+    object.angularSpeed = settings.angularSpeed;
+    object.initialAngleDeg = settings.initialAngleDeg;
+    object.angleRad = settings.initialAngleDeg * kDegToRad;
+    object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
+    object.color = YELLOW;
+    object.userControlled = true;
+    return object;
+}
+
+int FindPlayerSatelliteIndex(const std::vector<OrbitObject> &objects)
+{
+    for (int i = 0; i < static_cast<int>(objects.size()); ++i)
+    {
+        if (objects[i].userControlled && objects[i].name == "PlayerSat")
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int CountPlayerSatellites(const std::vector<OrbitObject> &objects)
+{
+    int count = 0;
+    for (const OrbitObject &object : objects)
+    {
+        if (object.userControlled && object.name == "PlayerSat")
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+int UpsertPlayerSatellite(std::vector<OrbitObject> &objects, const LaunchSettings &settings)
+{
+    const int existingIndex = FindPlayerSatelliteIndex(objects);
+    const OrbitObject playerSat = CreatePlayerSatellite(settings);
+    if (existingIndex >= 0)
+    {
+        objects[existingIndex] = playerSat;
+        return existingIndex;
+    }
+
+    objects.push_back(playerSat);
+    return static_cast<int>(objects.size()) - 1;
+}
+
 std::vector<OrbitObject> CreateDemoObjects()
 {
     std::vector<OrbitObject> objects = {

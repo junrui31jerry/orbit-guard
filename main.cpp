@@ -144,36 +144,25 @@ int main()
         }
         if (IsKeyPressed(KEY_L))
         {
-            objects.push_back(CreateUserSatellite(launchSettings));
-            selectedObjectIndex = static_cast<int>(objects.size()) - 1;
+            selectedObjectIndex = UpsertPlayerSatellite(objects, launchSettings);
             MarkMissionLaunched(missionState);
             exportMessageTimer = 0.0f;
-            actionMessage = objects.back().name + " launched into the simulation.";
+            actionMessage = "PlayerSat deployed into " + std::string(OrbitLayerText(ClassifyOrbitLayer(launchSettings.orbitRadius))) + ".";
             actionMessageTimer = 2.4f;
         }
         if (IsKeyPressed(KEY_BACKSPACE))
         {
-            for (int i = static_cast<int>(objects.size()) - 1; i >= 0; --i)
+            const int playerIndex = FindPlayerSatelliteIndex(objects);
+            if (playerIndex >= 0)
             {
-                if (objects[i].userControlled)
-                {
-                    actionMessage = objects[i].name + " removed.";
-                    objects.erase(objects.begin() + i);
-                    if (selectedObjectIndex == i)
-                    {
-                        selectedObjectIndex = -1;
-                    }
-                    else if (selectedObjectIndex > i)
-                    {
-                        selectedObjectIndex--;
-                    }
-                    missionState.hasReviewedRisk = false;
-                    missionState.hasAppliedAvoidance = false;
-                    missionState.hasSavedMissionReport = false;
-                    exportMessageTimer = 0.0f;
-                    actionMessageTimer = 2.4f;
-                    break;
-                }
+                actionMessage = "PlayerSat removed.";
+                objects.erase(objects.begin() + playerIndex);
+                selectedObjectIndex = -1;
+                missionState.hasReviewedRisk = false;
+                missionState.hasAppliedAvoidance = false;
+                missionState.hasSavedMissionReport = false;
+                exportMessageTimer = 0.0f;
+                actionMessageTimer = 2.4f;
             }
         }
 
