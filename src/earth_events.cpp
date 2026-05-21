@@ -5,6 +5,71 @@ namespace OrbitGuard
 namespace
 {
 constexpr float kScanDuration = 1.6f;
+constexpr float kResolvedEventHoldSeconds = 3.0f;
+
+int OtherRiskIndexForPlayer(const RiskReport &report, int playerIndex)
+{
+    if (report.firstIndex == playerIndex)
+    {
+        return report.secondIndex;
+    }
+    if (report.secondIndex == playerIndex)
+    {
+        return report.firstIndex;
+    }
+    return -1;
+}
+
+int FindObjectByName(const std::vector<OrbitObject> &objects, const std::string &name)
+{
+    for (int i = 0; i < static_cast<int>(objects.size()); ++i)
+    {
+        if (objects[i].name == name)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+OrbitObject CreateUnknownObjectNearPlayer(const OrbitObject &player)
+{
+    OrbitObject object;
+    object.name = "Unknown-01";
+    object.type = ObjectType::Debris;
+    object.orbitRadius = ClampFloat(player.orbitRadius + 48.0f, 85.0f, 330.0f);
+    object.inclinationDeg = ClampFloat(player.inclinationDeg + 9.0f, -75.0f, 75.0f);
+    object.angularSpeed = player.angularSpeed == 0.0f ? -0.28f : player.angularSpeed * 0.72f;
+    object.initialAngleDeg = player.initialAngleDeg + 34.0f;
+    while (object.initialAngleDeg >= 360.0f)
+    {
+        object.initialAngleDeg -= 360.0f;
+    }
+    object.angleRad = object.initialAngleDeg * kDegToRad;
+    object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
+    object.color = Color{70, 220, 255, 255};
+    object.userControlled = false;
+    return object;
+}
+
+void StartOrCreateUnknownObjectEvent(ImmediateEventState &event,
+                                     UnknownScanState &scan,
+                                     std::vector<OrbitObject> &objects,
+                                     int playerIndex)
+{
+    int unknownIndex = scan.objectIndex;
+    if (!scan.objectActive || unknownIndex < 0 || unknownIndex >= static_cast<int>(objects.size()))
+    {
+        unknownIndex = FindObjectByName(objects, "Unknown-01");
+        if (unknownIndex < 0)
+        {
+            objects.push_back(CreateUnknownObjectNearPlayer(objects[playerIndex]));
+            unknownIndex = static_cast<int>(objects.size()) - 1;
+        }
+    }
+
+    StartUnknownObjectEvent(event, scan, unknownIndex);
+}
 }
 
 void UpdateEarthMissionBeforeLaunch(EarthMissionState &mission, const LaunchSettings &settings)
@@ -104,6 +169,60 @@ void UpdateUnknownScan(ImmediateEventState &event, UnknownScanState &scan, float
         event.phase = ImmediateEventPhase::Resolved;
         event.result = scan.revealedType == ObjectType::Debris ? "Unknown-01 identified as debris." : "Unknown-01 identified as satellite.";
         event.action = "Scan complete. Continue monitoring PlayerSat.";
+    }
+}
+
+void UpdateEarthImmediateEvent(ImmediateEventState &event,
+                               UnknownScanState &scan,
+                               std::vector<OrbitObject> &objects,
+                               const RiskReport &report,
+                               float deltaTime)
+{
+    const int playerIndex = FindPlayerSatelliteIndex(objects);
+    if (playerIndex < 0)
+    {
+        return;
+    }
+
+    if (event.phase == ImmediateEventPhase::WaitingForPlayer || event.phase == ImmediateEventPhase::Animating)
+    {
+        return;
+    }
+
+    if (event.phase == ImmediateEventPhase::Resolved)
+    {
+        event.timer += deltaTime;
+        if (event.timer < kResolvedEventHoldSeconds)
+        {
+            return;
+        }
+        const bool completedCollisionWarning = event.type == ImmediateEventType::CollisionWarning;
+        ResetImmediateEvent(event);
+        if (completedCollisionWarning && !scan.objectActive)
+        {
+            StartOrCreateUnknownObjectEvent(event, scan, objects, playerIndex);
+            return;
+        }
+    }
+
+    const int riskTargetIndex = OtherRiskIndexForPlayer(report, playerIndex);
+    if (riskTargetIndex >= 0 &&
+        riskTargetIndex < static_cast<int>(objects.size()) &&
+        (report.level == RiskLevel::Medium || report.level == RiskLevel::High))
+    {
+        StartCollisionWarning(event, riskTargetIndex, objects[riskTargetIndex].name);
+        return;
+    }
+
+    if (!scan.objectActive || scan.objectIndex < 0 || scan.objectIndex >= static_cast<int>(objects.size()))
+    {
+        StartOrCreateUnknownObjectEvent(event, scan, objects, playerIndex);
+        return;
+    }
+
+    if (!scan.identified)
+    {
+        StartUnknownObjectEvent(event, scan, scan.objectIndex);
     }
 }
 

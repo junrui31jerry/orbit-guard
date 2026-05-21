@@ -237,6 +237,11 @@ void StartUnknownObjectEvent(ImmediateEventState &event, UnknownScanState &scan,
 bool CanStartUnknownScan(const ImmediateEventState &event, const UnknownScanState &scan, int selectedObjectIndex);
 void BeginUnknownScan(ImmediateEventState &event, UnknownScanState &scan);
 void UpdateUnknownScan(ImmediateEventState &event, UnknownScanState &scan, float deltaTime);
+void UpdateEarthImmediateEvent(ImmediateEventState &event,
+                               UnknownScanState &scan,
+                               std::vector<OrbitObject> &objects,
+                               const RiskReport &report,
+                               float deltaTime);
 bool BeginAvoidanceAnimation(AvoidanceAnimationState &animation,
                              ImmediateEventState &event,
                              const std::vector<OrbitObject> &objects,

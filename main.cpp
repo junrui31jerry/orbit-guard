@@ -293,44 +293,54 @@ int main()
         {
             UpdateEarthMissionBeforeLaunch(earthMission, launchSettings);
         }
+        UpdateEarthImmediateEvent(activeEvent, unknownScan, objects, report, deltaTime);
 
         if (IsKeyPressed(KEY_A))
         {
-            if (avoidancePlan.available)
+            if (activeEvent.type == ImmediateEventType::CollisionWarning)
             {
-                if (activeEvent.type == ImmediateEventType::CollisionWarning)
+                if (BeginAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, avoidancePlan))
                 {
-                    if (BeginAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, avoidancePlan))
-                    {
-                        MarkMissionAvoidanceApplied(missionState);
-                        actionMessage = "Avoidance burn started.";
-                    }
-                    else
-                    {
-                        actionMessage = activeEvent.result;
-                    }
+                    MarkMissionAvoidanceApplied(missionState);
+                    actionMessage = "Avoidance burn started.";
                 }
                 else
                 {
-                    actionMessage = "No active collision warning.";
+                    actionMessage = activeEvent.result;
                 }
+            }
+            else if (activeEvent.type == ImmediateEventType::UnknownObject)
+            {
+                actionMessage = "Active event is an unknown object. Select Unknown-01 and press C to scan.";
             }
             else
             {
-                if (!missionState.hasLaunchedUserSatellite)
-                {
-                    actionMessage = "Launch a user satellite before applying avoidance.";
-                }
-                else if (report.level == RiskLevel::Low)
-                {
-                    actionMessage = "Risk is low. Avoidance is not required.";
-                }
-                else
-                {
-                    actionMessage = "No quick avoidance found. Adjust orbit settings and relaunch.";
-                }
+                actionMessage = missionState.hasLaunchedUserSatellite ? "No active collision warning." : "Launch PlayerSat before applying avoidance.";
             }
             actionMessageTimer = 2.8f;
+        }
+
+        if (IsKeyPressed(KEY_C))
+        {
+            if (CanStartUnknownScan(activeEvent, unknownScan, selectedObjectIndex))
+            {
+                BeginUnknownScan(activeEvent, unknownScan);
+                actionMessage = "Scanning Unknown-01...";
+            }
+            else if (activeEvent.type == ImmediateEventType::UnknownObject && unknownScan.identified)
+            {
+                actionMessage = "Object already identified.";
+            }
+            else if (activeEvent.type == ImmediateEventType::UnknownObject)
+            {
+                actionMessage = "Select Unknown-01 before scanning.";
+            }
+            else
+            {
+                actionMessage = "No unknown object to scan.";
+            }
+            actionMessageTimer = 2.8f;
+            exportMessageTimer = 0.0f;
         }
 
         if (IsKeyPressed(KEY_S))
@@ -366,6 +376,11 @@ int main()
 
         BeginMode3D(camera);
         DrawOrbitLayerBands();
+        if (avoidanceAnimation.active)
+        {
+            DrawOrbitPath(avoidanceAnimation.startObject.orbitRadius, avoidanceAnimation.startObject.inclinationDeg, Fade(ORANGE, 0.42f));
+            DrawOrbitPath(avoidanceAnimation.endObject.orbitRadius, avoidanceAnimation.endObject.inclinationDeg, Fade(LIME, 0.46f));
+        }
         DrawGrid(24, 24.0f);
         DrawSphere({0.0f, 0.0f, 0.0f}, kEarthRadius, {31, 108, 188, 255});
         DrawSphereWires({0.0f, 0.0f, 0.0f}, kEarthRadius + 0.5f, 24, 16, Fade(SKYBLUE, 0.45f));
@@ -406,6 +421,14 @@ int main()
 
             const Color frameColor = i == selectedObjectIndex ? SelectedFrameColor(activeEvent, earthMission, objects, selectedObjectIndex) : BLANK;
             DrawSpaceObject(objects[i], frameColor);
+        }
+        if (avoidanceAnimation.active &&
+            avoidanceAnimation.objectIndex >= 0 &&
+            avoidanceAnimation.objectIndex < static_cast<int>(objects.size()))
+        {
+            const Vector3 playerPosition = objects[avoidanceAnimation.objectIndex].position;
+            DrawSphere(playerPosition, 16.0f, Fade(ORANGE, 0.34f));
+            DrawSphereWires(playerPosition, 24.0f, 16, 12, Fade(GOLD, 0.72f));
         }
         EndMode3D();
 
