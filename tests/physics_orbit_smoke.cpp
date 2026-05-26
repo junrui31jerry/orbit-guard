@@ -90,5 +90,26 @@ int main()
                 "physics orbit keeps radius stable over a half orbit") &&
          ok;
 
+    UpdateObjects(objects, 15.0f, 1.0f);
+    ok = Expect(objects[0].angleRad > kPi,
+                "angle sync continues past the half-orbit instead of mirroring") &&
+         ok;
+
+    OrbitObject adjustedPlayer = CreatePlayerSatellite(settings);
+    adjustedPlayer.orbitRadius = kReferenceOrbitRadius + 30.0f;
+    adjustedPlayer.inclinationDeg = 18.0f;
+    adjustedPlayer.angleRad = 0.75f * kPi;
+    adjustedPlayer.velocity = {};
+    RefreshObjectPosition(adjustedPlayer);
+
+    const Vector3 adjustedRadial = Vector3Normalize(adjustedPlayer.position);
+    const Vector3 adjustedVelocityDirection = Vector3Normalize(adjustedPlayer.velocity);
+    ok = Expect(Vector3Length(adjustedPlayer.velocity) > 0.1f,
+                "RefreshObjectPosition keeps physics velocity nonzero") &&
+         ok;
+    ok = Expect(std::fabs(Vector3DotProduct(adjustedRadial, adjustedVelocityDirection)) < 0.02f,
+                "RefreshObjectPosition keeps physics velocity tangent to the new radius") &&
+         ok;
+
     return ok ? 0 : 1;
 }

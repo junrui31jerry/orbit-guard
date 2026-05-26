@@ -52,10 +52,18 @@ void SyncOrbitFieldsFromPosition(OrbitObject &object)
         return;
     }
 
-    const float yzRadius = std::sqrt(object.position.y * object.position.y + object.position.z * object.position.z);
+    const float inclination = object.inclinationDeg * kDegToRad;
+    const float signedOrbitZ = object.position.y * std::sin(inclination) + object.position.z * std::cos(inclination);
     object.orbitRadius = radius;
-    object.angleRad = std::atan2(yzRadius, object.position.x);
-    object.inclinationDeg = std::atan2(object.position.y, object.position.z) / kDegToRad;
+    object.angleRad = std::atan2(signedOrbitZ, object.position.x);
+    while (object.angleRad < 0.0f)
+    {
+        object.angleRad += 2.0f * kPi;
+    }
+    while (object.angleRad >= 2.0f * kPi)
+    {
+        object.angleRad -= 2.0f * kPi;
+    }
     object.initialAngleDeg = object.angleRad / kDegToRad;
     while (object.initialAngleDeg < 0.0f)
     {
@@ -315,6 +323,10 @@ void UpdateObjects(std::vector<OrbitObject> &objects, float deltaTime, float tim
 void RefreshObjectPosition(OrbitObject &object)
 {
     object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
+    if (object.physicsDriven)
+    {
+        object.velocity = CalculateCircularOrbitVelocity(object.orbitRadius, object.inclinationDeg, object.angleRad, object.angularSpeed);
+    }
 }
 
 Rectangle BackToMenuButtonBounds()
