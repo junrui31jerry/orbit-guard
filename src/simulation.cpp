@@ -201,14 +201,16 @@ int UpsertPlayerSatellite(std::vector<OrbitObject> &objects, const LaunchSetting
 
 std::vector<OrbitObject> CreateDemoObjects()
 {
+    const Color demoSatelliteColor = {86, 166, 255, 255};
+
     std::vector<OrbitObject> objects = {
-        {"Astra-1", ObjectType::Satellite, 150.0f, 8.0f, 0.53f, 8.0f, 0.0f, {}, SKYBLUE, false},
+        {"Astra-1", ObjectType::Satellite, 150.0f, 8.0f, 0.53f, 8.0f, 0.0f, {}, demoSatelliteColor, false},
         {"Debris-A17", ObjectType::Debris, 153.0f, 11.0f, 0.49f, 17.0f, 0.0f, {}, ORANGE, false},
-        {"Beacon-3", ObjectType::Satellite, 205.0f, -18.0f, -0.34f, 136.0f, 0.0f, {}, LIME, false},
+        {"Beacon-3", ObjectType::Satellite, 205.0f, -18.0f, -0.34f, 136.0f, 0.0f, {}, demoSatelliteColor, false},
         {"Panel-88", ObjectType::Debris, 214.0f, -20.0f, -0.28f, 165.0f, 0.0f, {}, GOLD, false},
-        {"Zenith-12", ObjectType::Satellite, 255.0f, 35.0f, 0.25f, 252.0f, 0.0f, {}, VIOLET, false},
+        {"Zenith-12", ObjectType::Satellite, 255.0f, 35.0f, 0.25f, 252.0f, 0.0f, {}, demoSatelliteColor, false},
         {"Bolt-5", ObjectType::Debris, 118.0f, 58.0f, -0.72f, 284.0f, 0.0f, {}, RED, false},
-        {"Relay-9", ObjectType::Satellite, 178.0f, -38.0f, 0.44f, 318.0f, 0.0f, {}, BLUE, false},
+        {"Relay-9", ObjectType::Satellite, 178.0f, -38.0f, 0.44f, 318.0f, 0.0f, {}, demoSatelliteColor, false},
         {"Fragment-C", ObjectType::Debris, 232.0f, 6.0f, -0.31f, 72.0f, 0.0f, {}, PINK, false},
     };
 
@@ -238,6 +240,47 @@ void UpdateObjects(std::vector<OrbitObject> &objects, float deltaTime, float tim
 void RefreshObjectPosition(OrbitObject &object)
 {
     object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
+}
+
+Rectangle BackToMenuButtonBounds()
+{
+    return {18.0f, 18.0f, 44.0f, 44.0f};
+}
+
+bool IsPointInBackToMenuButton(Vector2 point)
+{
+    const Rectangle bounds = BackToMenuButtonBounds();
+    return point.x >= bounds.x &&
+           point.x <= bounds.x + bounds.width &&
+           point.y >= bounds.y &&
+           point.y <= bounds.y + bounds.height;
+}
+
+void ApplyEscapeAndWindowClose(GameMode &mode,
+                               bool &shouldClose,
+                               bool escapePressed,
+                               bool escapeDown,
+                               bool windowCloseRequested)
+{
+    if (windowCloseRequested && !escapeDown)
+    {
+        shouldClose = true;
+        return;
+    }
+
+    if (mode == GameMode::MainMenu)
+    {
+        if (escapePressed)
+        {
+            shouldClose = true;
+        }
+        return;
+    }
+
+    if (escapePressed || escapeDown)
+    {
+        mode = GameMode::MainMenu;
+    }
 }
 
 void UpdateOrbitCamera(OrbitCameraState &state, Camera3D &camera)

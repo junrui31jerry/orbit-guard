@@ -1,5 +1,6 @@
 #include "orbit_guard.h"
 
+#include <functional>
 #include <limits>
 
 namespace OrbitGuard
@@ -16,6 +17,26 @@ bool IsValidVisibleIndex(const std::vector<OrbitObject> &objects, int index, boo
     return index >= 0 &&
            index < static_cast<int>(objects.size()) &&
            IsVisibleForRisk(objects[index], showDemoObjects);
+}
+
+int OtherRiskIndex(const RiskReport &report, int objectIndex)
+{
+    if (report.firstIndex == objectIndex)
+    {
+        return report.secondIndex;
+    }
+    if (report.secondIndex == objectIndex)
+    {
+        return report.firstIndex;
+    }
+    return -1;
+}
+
+bool IsDebrisThreat(const std::vector<OrbitObject> &objects, int index)
+{
+    return index >= 0 &&
+           index < static_cast<int>(objects.size()) &&
+           objects[index].type == ObjectType::Debris;
 }
 
 void FinalizeRiskReport(RiskReport &report)
@@ -47,6 +68,86 @@ void FinalizeRiskReport(RiskReport &report)
         report.color = LIME;
         report.advice = "Stable condition: continue routine monitoring.";
     }
+}
+
+AvoidancePlan BuildAvoidancePlanWithEvaluator(const RiskReport &report,
+                                              const std::vector<OrbitObject> &objects,
+                                              int targetIndex,
+                                              const std::function<RiskReport(const std::vector<OrbitObject> &)> &evaluateRisk)
+{
+    AvoidancePlan plan;
+    plan.beforeDistance = report.distance;
+
+    if (targetIndex < 0 || targetIndex >= static_cast<int>(objects.size()))
+    {
+        return plan;
+    }
+
+    const int threatIndex = OtherRiskIndex(report, targetIndex);
+    if (!IsDebrisThreat(objects, threatIndex))
+    {
+        plan.action = "Avoidance burn is reserved for debris threats.";
+        return plan;
+    }
+
+    if (report.level == RiskLevel::Low)
+    {
+        plan.action = "Current user satellite path is acceptable. No avoidance action is needed.";
+        return plan;
+    }
+
+    struct Candidate
+    {
+        std::string action;
+        float radiusDelta;
+        float inclinationDelta;
+        float speedScale;
+    };
+
+    const std::vector<Candidate> candidates = {
+        {"Raise orbit radius by 25 km", 25.0f, 0.0f, 1.0f},
+        {"Lower orbit radius by 25 km", -25.0f, 0.0f, 1.0f},
+        {"Increase inclination by 12 deg", 0.0f, 12.0f, 1.0f},
+        {"Decrease inclination by 12 deg", 0.0f, -12.0f, 1.0f},
+        {"Slow angular speed by 15 percent", 0.0f, 0.0f, 0.85f},
+        {"Speed angular rate by 15 percent", 0.0f, 0.0f, 1.15f},
+    };
+
+    RiskReport bestReport = report;
+    OrbitObject bestObject = objects[targetIndex];
+    std::string bestAction = "No better avoidance candidate found.";
+
+    for (const Candidate &candidate : candidates)
+    {
+        std::vector<OrbitObject> testObjects = objects;
+        OrbitObject &testObject = testObjects[targetIndex];
+        testObject.orbitRadius = ClampFloat(testObject.orbitRadius + candidate.radiusDelta, 85.0f, 330.0f);
+        testObject.inclinationDeg = ClampFloat(testObject.inclinationDeg + candidate.inclinationDelta, -75.0f, 75.0f);
+        testObject.angularSpeed = ClampFloat(testObject.angularSpeed * candidate.speedScale, -1.20f, 1.20f);
+        RefreshObjectPosition(testObject);
+
+        const RiskReport candidateReport = evaluateRisk(testObjects);
+        if (candidateReport.distance > bestReport.distance)
+        {
+            bestReport = candidateReport;
+            bestObject = testObject;
+            bestAction = candidate.action;
+        }
+    }
+
+    plan.available = bestReport.distance > report.distance + 1.0f;
+    plan.objectIndex = targetIndex;
+    plan.afterDistance = bestReport.distance;
+    plan.afterLevel = bestReport.level;
+    plan.action = bestAction;
+    plan.proposedObject = bestObject;
+
+    if (!plan.available)
+    {
+        plan.action = "No safe quick adjustment found. Reduce speed or launch into a wider orbit.";
+    }
+
+    return plan;
 }
 } // namespace
 
@@ -124,6 +225,26 @@ RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObj
     return report;
 }
 
+RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstIndex, int secondIndex)
+{
+    RiskReport report;
+    if (firstIndex < 0 ||
+        secondIndex < 0 ||
+        firstIndex == secondIndex ||
+        firstIndex >= static_cast<int>(objects.size()) ||
+        secondIndex >= static_cast<int>(objects.size()))
+    {
+        FinalizeRiskReport(report);
+        return report;
+    }
+
+    report.firstIndex = firstIndex < secondIndex ? firstIndex : secondIndex;
+    report.secondIndex = firstIndex < secondIndex ? secondIndex : firstIndex;
+    report.distance = Vector3Distance(objects[firstIndex].position, objects[secondIndex].position);
+    FinalizeRiskReport(report);
+    return report;
+}
+
 int FindControlledRiskObject(const RiskReport &report, const std::vector<OrbitObject> &objects)
 {
     if (report.firstIndex >= 0 && report.firstIndex < static_cast<int>(objects.size()) && objects[report.firstIndex].userControlled)
@@ -147,73 +268,37 @@ AvoidancePlan BuildAvoidancePlan(const RiskReport &report,
                                  bool showDemoObjects,
                                  int selectedObjectIndex)
 {
-    AvoidancePlan plan;
-    plan.beforeDistance = report.distance;
-
     const int targetIndex = FindControlledRiskObject(report, objects);
     if (targetIndex < 0)
     {
-        return plan;
+        return AvoidancePlan{};
     }
 
-    if (report.level == RiskLevel::Low)
+    return BuildAvoidancePlanWithEvaluator(
+        report,
+        objects,
+        targetIndex,
+        [showDemoObjects, selectedObjectIndex](const std::vector<OrbitObject> &testObjects) {
+            return AnalyzeRisk(testObjects, showDemoObjects, selectedObjectIndex);
+        });
+}
+
+AvoidancePlan BuildAvoidancePlanForThreat(const std::vector<OrbitObject> &objects, int threatIndex)
+{
+    const int playerIndex = FindPlayerSatelliteIndex(objects);
+    if (playerIndex < 0)
     {
-        plan.action = "Current user satellite path is acceptable. No avoidance action is needed.";
-        return plan;
+        return AvoidancePlan{};
     }
 
-    struct Candidate
-    {
-        std::string action;
-        float radiusDelta;
-        float inclinationDelta;
-        float speedScale;
-    };
-
-    const std::vector<Candidate> candidates = {
-        {"Raise orbit radius by 25 km", 25.0f, 0.0f, 1.0f},
-        {"Lower orbit radius by 25 km", -25.0f, 0.0f, 1.0f},
-        {"Increase inclination by 12 deg", 0.0f, 12.0f, 1.0f},
-        {"Decrease inclination by 12 deg", 0.0f, -12.0f, 1.0f},
-        {"Slow angular speed by 15 percent", 0.0f, 0.0f, 0.85f},
-        {"Speed angular rate by 15 percent", 0.0f, 0.0f, 1.15f},
-    };
-
-    RiskReport bestReport = report;
-    OrbitObject bestObject = objects[targetIndex];
-    std::string bestAction = "No better avoidance candidate found.";
-
-    for (const Candidate &candidate : candidates)
-    {
-        std::vector<OrbitObject> testObjects = objects;
-        OrbitObject &testObject = testObjects[targetIndex];
-        testObject.orbitRadius = ClampFloat(testObject.orbitRadius + candidate.radiusDelta, 85.0f, 330.0f);
-        testObject.inclinationDeg = ClampFloat(testObject.inclinationDeg + candidate.inclinationDelta, -75.0f, 75.0f);
-        testObject.angularSpeed = ClampFloat(testObject.angularSpeed * candidate.speedScale, -1.20f, 1.20f);
-        RefreshObjectPosition(testObject);
-
-        const RiskReport candidateReport = AnalyzeRisk(testObjects, showDemoObjects, selectedObjectIndex);
-        if (candidateReport.distance > bestReport.distance)
-        {
-            bestReport = candidateReport;
-            bestObject = testObject;
-            bestAction = candidate.action;
-        }
-    }
-
-    plan.available = bestReport.distance > report.distance + 1.0f;
-    plan.objectIndex = targetIndex;
-    plan.afterDistance = bestReport.distance;
-    plan.afterLevel = bestReport.level;
-    plan.action = bestAction;
-    plan.proposedObject = bestObject;
-
-    if (!plan.available)
-    {
-        plan.action = "No safe quick adjustment found. Reduce speed or launch into a wider orbit.";
-    }
-
-    return plan;
+    const RiskReport threatReport = AnalyzePairRisk(objects, playerIndex, threatIndex);
+    return BuildAvoidancePlanWithEvaluator(
+        threatReport,
+        objects,
+        playerIndex,
+        [playerIndex, threatIndex](const std::vector<OrbitObject> &testObjects) {
+            return AnalyzePairRisk(testObjects, playerIndex, threatIndex);
+        });
 }
 
 void ApplyAvoidancePlan(std::vector<OrbitObject> &objects, const AvoidancePlan &plan)

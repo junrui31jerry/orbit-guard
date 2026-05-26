@@ -22,7 +22,20 @@ float ClampFloat(float value, float minimum, float maximum)
 
 void RefreshObjectPosition(OrbitObject &object)
 {
-    (void)object;
+    object.position = {object.orbitRadius, 0.0f, 0.0f};
+}
+
+int FindPlayerSatelliteIndex(const std::vector<OrbitObject> &objects)
+{
+    for (int i = 0; i < static_cast<int>(objects.size()); ++i)
+    {
+        if (objects[i].userControlled && objects[i].name == "PlayerSat")
+        {
+            return i;
+        }
+    }
+
+    return -1;
 }
 } // namespace OrbitGuard
 
@@ -43,6 +56,14 @@ OrbitObject MakeObject(const char *name, bool userControlled, Vector3 position)
     object.name = name;
     object.userControlled = userControlled;
     object.position = position;
+    object.orbitRadius = position.x;
+    return object;
+}
+
+OrbitObject MakeTypedObject(const char *name, ObjectType type, bool userControlled, Vector3 position)
+{
+    OrbitObject object = MakeObject(name, userControlled, position);
+    object.type = type;
     return object;
 }
 
@@ -81,6 +102,14 @@ int main()
     ok = Expect(hiddenDemoReport.firstIndex == 2 && hiddenDemoReport.secondIndex == 3,
                 "hidden demo objects are excluded from risk") &&
          ok;
+
+    std::vector<OrbitObject> satelliteThreatObjects = {
+        MakeTypedObject("PlayerSat", ObjectType::Satellite, true, {0.0f, 0.0f, 0.0f}),
+        MakeTypedObject("Relay-9", ObjectType::Satellite, false, {24.0f, 0.0f, 0.0f}),
+    };
+    RiskReport satelliteThreatReport = AnalyzeRisk(satelliteThreatObjects, true, 0);
+    AvoidancePlan satelliteThreatPlan = BuildAvoidancePlan(satelliteThreatReport, satelliteThreatObjects, true, 0);
+    ok = Expect(!satelliteThreatPlan.available, "satellite-only threats do not produce A avoidance plans") && ok;
 
     return ok ? 0 : 1;
 }

@@ -56,11 +56,26 @@ int PickVisibleObject(const std::vector<OrbitObject> &objects, const Camera3D &c
 
     return bestIndex;
 }
+
+std::string ScanTargetName(const UnknownScanState &scan, const std::vector<OrbitObject> &objects)
+{
+    if (scan.objectIndex >= 0 && scan.objectIndex < static_cast<int>(objects.size()))
+    {
+        return objects[scan.objectIndex].name;
+    }
+    if (!scan.objectName.empty())
+    {
+        return scan.objectName;
+    }
+    return "unknown object";
+}
 } // namespace
 
 int main()
 {
     InitWindow(kScreenWidth, kScreenHeight, "OrbitGuard - 3D Collision Risk Monitor");
+    // Keep ESC available for in-game navigation instead of raylib's default close shortcut.
+    SetExitKey(KEY_NULL);
     SetTargetFPS(60);
 
     Camera3D camera = {};
@@ -94,9 +109,40 @@ int main()
     ResetShip(solarShip, {0.0f, 0.0f, 330.0f}, 0.0f);
     ResetShip(blackHoleShip, {0.0f, 0.0f, 330.0f}, 0.0f);
 
-    while (!WindowShouldClose() && !shouldClose)
+    auto returnToMainMenu = [&]() {
+        gameMode = GameMode::MainMenu;
+        selectedMenuItem = 0;
+        showLaunchHelp = false;
+        paused = false;
+        actionMessage.clear();
+        actionMessageTimer = 0.0f;
+        exportMessageTimer = 0.0f;
+    };
+
+    while (!shouldClose)
     {
         const float deltaTime = GetFrameTime();
+        const Vector2 mousePosition = GetMousePosition();
+        const bool escapePressed = IsKeyPressed(KEY_ESCAPE);
+        const bool escapeDown = IsKeyDown(KEY_ESCAPE);
+        const bool windowCloseRequested = WindowShouldClose();
+        const GameMode modeBeforeEscapeHandling = gameMode;
+        ApplyEscapeAndWindowClose(gameMode, shouldClose, escapePressed, escapeDown, windowCloseRequested);
+        if (modeBeforeEscapeHandling != GameMode::MainMenu && gameMode == GameMode::MainMenu)
+        {
+            returnToMainMenu();
+        }
+        if (shouldClose || gameMode != modeBeforeEscapeHandling)
+        {
+            continue;
+        }
+        if (gameMode != GameMode::MainMenu &&
+            IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+            IsPointInBackToMenuButton(mousePosition))
+        {
+            returnToMainMenu();
+            continue;
+        }
 
         if (gameMode == GameMode::MainMenu)
         {
@@ -124,21 +170,10 @@ int main()
             {
                 gameMode = selectedMenuItem == 0 ? GameMode::EarthSpace : (selectedMenuItem == 1 ? GameMode::SolarSystem : GameMode::BlackHole);
             }
-            if (IsKeyPressed(KEY_ESCAPE))
-            {
-                shouldClose = true;
-            }
-
             BeginDrawing();
             ClearBackground({3, 6, 12, 255});
             DrawMainMenu(selectedMenuItem);
             EndDrawing();
-            continue;
-        }
-
-        if (IsKeyPressed(KEY_ESCAPE))
-        {
-            gameMode = GameMode::MainMenu;
             continue;
         }
 
@@ -148,6 +183,7 @@ int main()
             BeginDrawing();
             ClearBackground({3, 6, 12, 255});
             DrawSolarSystemMode(solarShip);
+            DrawBackToMenuButton(mousePosition);
             EndDrawing();
             continue;
         }
@@ -162,6 +198,7 @@ int main()
             BeginDrawing();
             ClearBackground({3, 6, 12, 255});
             DrawBlackHoleMode(blackHoleShip, blackHoleTransferred);
+            DrawBackToMenuButton(mousePosition);
             EndDrawing();
             continue;
         }
@@ -263,7 +300,7 @@ int main()
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !showLaunchHelp)
         {
-            const Vector2 mouse = GetMousePosition();
+            const Vector2 mouse = mousePosition;
             if (IsScenePickArea(mouse))
             {
                 const int pickedIndex = PickVisibleObject(objects, camera, showDemoObjects);
@@ -283,7 +320,23 @@ int main()
         }
 
         RiskReport report = AnalyzeRisk(objects, showDemoObjects, selectedObjectIndex);
-        AvoidancePlan avoidancePlan = BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
+        AvoidancePlan avoidancePlan = activeEvent.type == ImmediateEventType::CollisionWarning
+                                          ? BuildAvoidancePlanForThreat(objects, activeEvent.targetIndex)
+                                          : BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
+        const int objectCountBeforeEventUpdate = static_cast<int>(objects.size());
+        UpdateEarthImmediateEvent(activeEvent, unknownScan, objects, report, deltaTime);
+        if (objectCountBeforeEventUpdate != static_cast<int>(objects.size()) ||
+            activeEvent.type == ImmediateEventType::CollisionWarning)
+        {
+            if (!IsValidVisibleSelection(objects, selectedObjectIndex, showDemoObjects))
+            {
+                selectedObjectIndex = -1;
+            }
+            report = AnalyzeRisk(objects, showDemoObjects, selectedObjectIndex);
+            avoidancePlan = activeEvent.type == ImmediateEventType::CollisionWarning && !activeEvent.playerDestroyed
+                                ? BuildAvoidancePlanForThreat(objects, activeEvent.targetIndex)
+                                : BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
+        }
         UpdateMissionState(missionState, report, avoidancePlan, objects);
         if (FindPlayerSatelliteIndex(objects) >= 0)
         {
@@ -293,13 +346,16 @@ int main()
         {
             UpdateEarthMissionBeforeLaunch(earthMission, launchSettings);
         }
-        UpdateEarthImmediateEvent(activeEvent, unknownScan, objects, report, deltaTime);
 
         if (IsKeyPressed(KEY_A))
         {
             if (activeEvent.type == ImmediateEventType::CollisionWarning)
             {
-                if (BeginAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, avoidancePlan))
+                if (activeEvent.playerDestroyed)
+                {
+                    actionMessage = activeEvent.result;
+                }
+                else if (BeginAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, avoidancePlan))
                 {
                     MarkMissionAvoidanceApplied(missionState);
                     actionMessage = "Avoidance burn started.";
@@ -311,7 +367,7 @@ int main()
             }
             else if (activeEvent.type == ImmediateEventType::UnknownObject)
             {
-                actionMessage = "Active event is an unknown object. Select Unknown-01 and press C to scan.";
+                actionMessage = "Active event is an unknown object. Select " + ScanTargetName(unknownScan, objects) + " and press C to scan.";
             }
             else
             {
@@ -325,15 +381,15 @@ int main()
             if (CanStartUnknownScan(activeEvent, unknownScan, selectedObjectIndex))
             {
                 BeginUnknownScan(activeEvent, unknownScan);
-                actionMessage = "Scanning Unknown-01...";
+                actionMessage = "Scanning " + ScanTargetName(unknownScan, objects) + "...";
             }
-            else if (activeEvent.type == ImmediateEventType::UnknownObject && unknownScan.identified)
+            else if (unknownScan.identified)
             {
                 actionMessage = "Object already identified.";
             }
-            else if (activeEvent.type == ImmediateEventType::UnknownObject)
+            else if (unknownScan.objectActive)
             {
-                actionMessage = "Select Unknown-01 before scanning.";
+                actionMessage = "Select " + ScanTargetName(unknownScan, objects) + " before scanning.";
             }
             else
             {
@@ -430,6 +486,12 @@ int main()
             DrawSphere(playerPosition, 16.0f, Fade(ORANGE, 0.34f));
             DrawSphereWires(playerPosition, 24.0f, 16, 12, Fade(GOLD, 0.72f));
         }
+        if (activeEvent.playerDestroyed)
+        {
+            const float fade = 1.0f - ClampFloat(activeEvent.timer / 3.0f, 0.0f, 1.0f);
+            DrawSphere(activeEvent.explosionPosition, 18.0f + 28.0f * (1.0f - fade), Fade(ORANGE, 0.58f * fade));
+            DrawSphereWires(activeEvent.explosionPosition, 34.0f + 20.0f * (1.0f - fade), 18, 12, Fade(RED, 0.82f * fade));
+        }
         EndMode3D();
 
         DrawImmediateEventBanner(activeEvent, unknownScan);
@@ -439,6 +501,7 @@ int main()
         {
             DrawLaunchHelpOverlay(launchSettings);
         }
+        DrawBackToMenuButton(mousePosition);
         EndDrawing();
         continue;
         }

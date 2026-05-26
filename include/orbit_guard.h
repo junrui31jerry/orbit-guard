@@ -154,6 +154,8 @@ struct ImmediateEventState
     ImmediateEventPhase phase = ImmediateEventPhase::Inactive;
     int targetIndex = -1;
     float timer = 0.0f;
+    bool playerDestroyed = false;
+    Vector3 explosionPosition = {};
     std::string title;
     std::string detail;
     std::string action;
@@ -179,6 +181,11 @@ struct UnknownScanState
     bool identified = false;
     int objectIndex = -1;
     float progress = 0.0f;
+    float cooldownTimer = 0.0f;
+    float collisionEventTimer = 0.0f;
+    int nextObjectNumber = 1;
+    int nextImpactNumber = 1;
+    std::string objectName;
     ObjectType revealedType = ObjectType::Debris;
 };
 
@@ -207,16 +214,25 @@ void ResetObjects(std::vector<OrbitObject> &objects);
 void UpdateObjects(std::vector<OrbitObject> &objects, float deltaTime, float timeScale);
 void RefreshObjectPosition(OrbitObject &object);
 void UpdateOrbitCamera(OrbitCameraState &state, Camera3D &camera);
+Rectangle BackToMenuButtonBounds();
+bool IsPointInBackToMenuButton(Vector2 point);
+void ApplyEscapeAndWindowClose(GameMode &mode,
+                               bool &shouldClose,
+                               bool escapePressed,
+                               bool escapeDown,
+                               bool windowCloseRequested);
 
 const char *RiskLevelText(RiskLevel level);
 RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects);
 RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObjects, int selectedObjectIndex);
+RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstIndex, int secondIndex);
 int FindControlledRiskObject(const RiskReport &report, const std::vector<OrbitObject> &objects);
 AvoidancePlan BuildAvoidancePlan(const RiskReport &report, const std::vector<OrbitObject> &objects);
 AvoidancePlan BuildAvoidancePlan(const RiskReport &report,
                                  const std::vector<OrbitObject> &objects,
                                  bool showDemoObjects,
                                  int selectedObjectIndex);
+AvoidancePlan BuildAvoidancePlanForThreat(const std::vector<OrbitObject> &objects, int threatIndex);
 void ApplyAvoidancePlan(std::vector<OrbitObject> &objects, const AvoidancePlan &plan);
 void ResetMissionState(MissionState &mission);
 void MarkMissionLaunched(MissionState &mission);
@@ -272,6 +288,7 @@ void DrawOrbitPath(float radius, float inclinationDeg, Color color);
 void DrawSolarSystemBackground();
 void DrawOrbitLayerBands();
 void DrawSpaceObject(const OrbitObject &object, Color frameColor);
+void DrawBackToMenuButton(Vector2 mousePosition);
 void DrawMainMenu(int selectedMenuItem);
 void DrawModeTitle(const char *title, const char *subtitle);
 void DrawImmediateEventBanner(const ImmediateEventState &event, const UnknownScanState &scan);
