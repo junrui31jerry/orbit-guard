@@ -4,6 +4,7 @@
 #include "raylib.h"
 #include "raymath.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -217,6 +218,29 @@ Vector3 CalculateOrbitTangent(float inclinationDeg, float angleRad);
 Vector3 CalculateCircularOrbitVelocity(float radius, float inclinationDeg, float angleRad, float speedControl);
 void SyncOrbitFieldsFromPosition(OrbitObject &object);
 void InitializeOrbitPhysics(OrbitObject &object);
+void RefreshObjectPosition(OrbitObject &object);
+inline void StepOrbitObject(OrbitObject &object, float deltaTime)
+{
+    if (!object.physicsDriven)
+    {
+        object.angleRad += object.angularSpeed * deltaTime;
+        object.angleRad = std::fmod(object.angleRad, 2.0f * kPi);
+        RefreshObjectPosition(object);
+        return;
+    }
+
+    const float radius = Vector3Length(object.position);
+    if (radius <= kEarthRadius + 0.5f)
+    {
+        return;
+    }
+
+    const float radiusCubed = radius * radius * radius;
+    const Vector3 acceleration = Vector3Scale(object.position, -kEarthMu / radiusCubed);
+    object.velocity = Vector3Add(object.velocity, Vector3Scale(acceleration, deltaTime));
+    object.position = Vector3Add(object.position, Vector3Scale(object.velocity, deltaTime));
+    SyncOrbitFieldsFromPosition(object);
+}
 OrbitLayer ClassifyOrbitLayer(float orbitRadius);
 const char *OrbitLayerText(OrbitLayer layer);
 bool IsOrbitLayerMatch(OrbitLayer layer, float orbitRadius);
@@ -231,7 +255,6 @@ int UpsertPlayerSatellite(std::vector<OrbitObject> &objects, const LaunchSetting
 std::vector<OrbitObject> CreateDemoObjects();
 void ResetObjects(std::vector<OrbitObject> &objects);
 void UpdateObjects(std::vector<OrbitObject> &objects, float deltaTime, float timeScale);
-void RefreshObjectPosition(OrbitObject &object);
 void UpdateOrbitCamera(OrbitCameraState &state, Camera3D &camera);
 Rectangle BackToMenuButtonBounds();
 bool IsPointInBackToMenuButton(Vector2 point);

@@ -25,6 +25,11 @@ void RefreshObjectPosition(OrbitObject &object)
     object.position = {object.orbitRadius, 0.0f, 0.0f};
 }
 
+void SyncOrbitFieldsFromPosition(OrbitObject &object)
+{
+    object.orbitRadius = Vector3Length(object.position);
+}
+
 int FindPlayerSatelliteIndex(const std::vector<OrbitObject> &objects)
 {
     for (int i = 0; i < static_cast<int>(objects.size()); ++i)
@@ -57,6 +62,7 @@ OrbitObject MakeObject(const char *name, bool userControlled, Vector3 position)
     object.userControlled = userControlled;
     object.position = position;
     object.orbitRadius = position.x;
+    object.physicsDriven = false;
     return object;
 }
 

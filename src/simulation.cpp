@@ -295,28 +295,10 @@ void UpdateObjects(std::vector<OrbitObject> &objects, float deltaTime, float tim
     const float stepDelta = physicsDelta / static_cast<float>(stepCount);
     for (OrbitObject &object : objects)
     {
-        if (!object.physicsDriven)
-        {
-            object.angleRad += object.angularSpeed * physicsDelta;
-            object.angleRad = std::fmod(object.angleRad, 2.0f * kPi);
-            RefreshObjectPosition(object);
-            continue;
-        }
-
         for (int step = 0; step < stepCount; ++step)
         {
-            const float radius = Vector3Length(object.position);
-            if (radius <= kEarthRadius + 0.5f)
-            {
-                break;
-            }
-
-            const float radiusCubed = radius * radius * radius;
-            const Vector3 acceleration = Vector3Scale(object.position, -kEarthMu / radiusCubed);
-            object.velocity = Vector3Add(object.velocity, Vector3Scale(acceleration, stepDelta));
-            object.position = Vector3Add(object.position, Vector3Scale(object.velocity, stepDelta));
+            StepOrbitObject(object, stepDelta);
         }
-        SyncOrbitFieldsFromPosition(object);
     }
 }
 

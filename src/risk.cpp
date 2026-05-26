@@ -1,5 +1,6 @@
 #include "orbit_guard.h"
 
+#include <cmath>
 #include <functional>
 #include <limits>
 
@@ -68,30 +69,6 @@ void FinalizeRiskReport(RiskReport &report)
         report.color = LIME;
         report.advice = "Stable condition: continue routine monitoring.";
     }
-}
-
-void StepPredictedObject(OrbitObject &object, float deltaTime)
-{
-    if (!object.physicsDriven)
-    {
-        object.position = Vector3Add(object.position, Vector3Scale(object.velocity, deltaTime));
-        return;
-    }
-
-    const float radius = Vector3Length(object.position);
-    if (radius <= kEarthRadius + 0.5f)
-    {
-        return;
-    }
-    if (Vector3Length(object.velocity) <= 0.0001f)
-    {
-        return;
-    }
-
-    const float radiusCubed = radius * radius * radius;
-    const Vector3 acceleration = Vector3Scale(object.position, -kEarthMu / radiusCubed);
-    object.velocity = Vector3Add(object.velocity, Vector3Scale(acceleration, deltaTime));
-    object.position = Vector3Add(object.position, Vector3Scale(object.velocity, deltaTime));
 }
 
 AvoidancePlan BuildAvoidancePlanWithEvaluator(const RiskReport &report,
@@ -276,10 +253,13 @@ RiskReport PredictPairRisk(const std::vector<OrbitObject> &objects,
     report.closestApproachTime = 0.0f;
     report.predicted = true;
 
-    for (float t = stepSeconds; t <= horizonSeconds + 0.001f; t += stepSeconds)
+    const float safeHorizonSeconds = std::isfinite(horizonSeconds) && horizonSeconds > 0.0f ? horizonSeconds : 0.0f;
+    const float safeStepSeconds = std::isfinite(stepSeconds) && stepSeconds > 0.0f ? stepSeconds : kPredictionStepSeconds;
+
+    for (float t = safeStepSeconds; t <= safeHorizonSeconds + 0.001f; t += safeStepSeconds)
     {
-        StepPredictedObject(first, stepSeconds);
-        StepPredictedObject(second, stepSeconds);
+        StepOrbitObject(first, safeStepSeconds);
+        StepOrbitObject(second, safeStepSeconds);
         const float distance = Vector3Distance(first.position, second.position);
         if (distance < report.distance)
         {
