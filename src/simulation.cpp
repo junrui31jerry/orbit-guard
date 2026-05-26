@@ -20,6 +20,62 @@ Vector3 CalculateOrbitPosition(float radius, float inclinationDeg, float angleRa
     return {x, y, z};
 }
 
+float SpeedBiasFromControl(float speedControl)
+{
+    const float bias = std::fabs(speedControl) / kDefaultSpeedBiasControl;
+    return ClampFloat(bias, 0.65f, 1.35f);
+}
+
+Vector3 CalculateOrbitTangent(float inclinationDeg, float angleRad)
+{
+    const float inclination = inclinationDeg * kDegToRad;
+    Vector3 tangent = {
+        -std::sin(angleRad),
+        std::cos(angleRad) * std::sin(inclination),
+        std::cos(angleRad) * std::cos(inclination)};
+    return Vector3Normalize(tangent);
+}
+
+Vector3 CalculateCircularOrbitVelocity(float radius, float inclinationDeg, float angleRad, float speedControl)
+{
+    const float safeRadius = std::max(radius, kEarthRadius + 1.0f);
+    const float direction = speedControl < 0.0f ? -1.0f : 1.0f;
+    const float speed = std::sqrt(kEarthMu / safeRadius) * SpeedBiasFromControl(speedControl);
+    return Vector3Scale(CalculateOrbitTangent(inclinationDeg, angleRad), speed * direction);
+}
+
+void SyncOrbitFieldsFromPosition(OrbitObject &object)
+{
+    const float radius = Vector3Length(object.position);
+    if (radius <= 0.001f)
+    {
+        return;
+    }
+
+    const float yzRadius = std::sqrt(object.position.y * object.position.y + object.position.z * object.position.z);
+    object.orbitRadius = radius;
+    object.angleRad = std::atan2(yzRadius, object.position.x);
+    object.inclinationDeg = std::atan2(object.position.y, object.position.z) / kDegToRad;
+    object.initialAngleDeg = object.angleRad / kDegToRad;
+    while (object.initialAngleDeg < 0.0f)
+    {
+        object.initialAngleDeg += 360.0f;
+    }
+    while (object.initialAngleDeg >= 360.0f)
+    {
+        object.initialAngleDeg -= 360.0f;
+    }
+}
+
+void InitializeOrbitPhysics(OrbitObject &object)
+{
+    object.angleRad = object.initialAngleDeg * kDegToRad;
+    object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
+    object.velocity = CalculateCircularOrbitVelocity(object.orbitRadius, object.inclinationDeg, object.angleRad, object.angularSpeed);
+    object.collisionRadius = object.type == ObjectType::Satellite ? kDefaultSatelliteCollisionRadius : kDefaultDebrisCollisionRadius;
+    object.physicsDriven = true;
+}
+
 OrbitLayer ClassifyOrbitLayer(float orbitRadius)
 {
     if (orbitRadius < 85.0f)
@@ -137,10 +193,9 @@ OrbitObject CreateUserSatellite(LaunchSettings &settings)
     object.inclinationDeg = settings.inclinationDeg;
     object.angularSpeed = settings.angularSpeed;
     object.initialAngleDeg = settings.initialAngleDeg;
-    object.angleRad = settings.initialAngleDeg * kDegToRad;
-    object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
     object.color = YELLOW;
     object.userControlled = true;
+    InitializeOrbitPhysics(object);
     return object;
 }
 
@@ -153,10 +208,9 @@ OrbitObject CreatePlayerSatellite(const LaunchSettings &settings)
     object.inclinationDeg = settings.inclinationDeg;
     object.angularSpeed = settings.angularSpeed;
     object.initialAngleDeg = settings.initialAngleDeg;
-    object.angleRad = settings.initialAngleDeg * kDegToRad;
-    object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
     object.color = YELLOW;
     object.userControlled = true;
+    InitializeOrbitPhysics(object);
     return object;
 }
 
@@ -222,18 +276,39 @@ void ResetObjects(std::vector<OrbitObject> &objects)
 {
     for (OrbitObject &object : objects)
     {
-        object.angleRad = object.initialAngleDeg * kDegToRad;
-        RefreshObjectPosition(object);
+        InitializeOrbitPhysics(object);
     }
 }
 
 void UpdateObjects(std::vector<OrbitObject> &objects, float deltaTime, float timeScale)
 {
+    const float physicsDelta = deltaTime * timeScale;
+    const int stepCount = std::max(1, static_cast<int>(std::ceil(std::fabs(physicsDelta) / kPredictionStepSeconds)));
+    const float stepDelta = physicsDelta / static_cast<float>(stepCount);
     for (OrbitObject &object : objects)
     {
-        object.angleRad += object.angularSpeed * deltaTime * timeScale;
-        object.angleRad = std::fmod(object.angleRad, 2.0f * kPi);
-        RefreshObjectPosition(object);
+        if (!object.physicsDriven)
+        {
+            object.angleRad += object.angularSpeed * physicsDelta;
+            object.angleRad = std::fmod(object.angleRad, 2.0f * kPi);
+            RefreshObjectPosition(object);
+            continue;
+        }
+
+        for (int step = 0; step < stepCount; ++step)
+        {
+            const float radius = Vector3Length(object.position);
+            if (radius <= kEarthRadius + 0.5f)
+            {
+                break;
+            }
+
+            const float radiusCubed = radius * radius * radius;
+            const Vector3 acceleration = Vector3Scale(object.position, -kEarthMu / radiusCubed);
+            object.velocity = Vector3Add(object.velocity, Vector3Scale(acceleration, stepDelta));
+            object.position = Vector3Add(object.position, Vector3Scale(object.velocity, stepDelta));
+        }
+        SyncOrbitFieldsFromPosition(object);
     }
 }
 

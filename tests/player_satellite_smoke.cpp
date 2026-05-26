@@ -54,6 +54,8 @@ int main()
     ok = Expect(firstIndex >= 0, "first PlayerSat index exists") && ok;
     ok = Expect(objects[firstIndex].name == "PlayerSat", "player satellite has stable name") && ok;
     ok = Expect(objects[firstIndex].userControlled, "PlayerSat is user controlled") && ok;
+    ok = Expect(objects[firstIndex].physicsDriven, "PlayerSat is physics driven") && ok;
+    ok = Expect(Vector3Length(objects[firstIndex].velocity) > 0.1f, "PlayerSat has launch velocity") && ok;
 
     Color demoSatelliteColor = {};
     bool sawDemoSatellite = false;

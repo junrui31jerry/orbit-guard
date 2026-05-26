@@ -20,6 +20,15 @@ inline constexpr float kDegToRad = kPi / 180.0f;
 inline constexpr float kEarthRadius = 46.0f;
 inline constexpr float kHighRiskDistance = 35.0f;
 inline constexpr float kMediumRiskDistance = 85.0f;
+inline constexpr float kReferenceOrbitRadius = 165.0f;
+inline constexpr float kReferenceOrbitPeriodSeconds = 60.0f;
+inline constexpr float kDefaultSpeedBiasControl = 0.48f;
+inline constexpr float kEarthMu = (4.0f * kPi * kPi * kReferenceOrbitRadius * kReferenceOrbitRadius * kReferenceOrbitRadius) /
+                                  (kReferenceOrbitPeriodSeconds * kReferenceOrbitPeriodSeconds);
+inline constexpr float kPredictionHorizonSeconds = 120.0f;
+inline constexpr float kPredictionStepSeconds = 0.5f;
+inline constexpr float kDefaultSatelliteCollisionRadius = 8.0f;
+inline constexpr float kDefaultDebrisCollisionRadius = 6.0f;
 
 enum class ObjectType
 {
@@ -78,6 +87,9 @@ struct OrbitObject
     Vector3 position = {};
     Color color = WHITE;
     bool userControlled = false;
+    Vector3 velocity = {};
+    float collisionRadius = kDefaultSatelliteCollisionRadius;
+    bool physicsDriven = true;
 };
 
 struct RiskReport
@@ -198,6 +210,11 @@ struct ShipState
 
 float ClampFloat(float value, float minimum, float maximum);
 Vector3 CalculateOrbitPosition(float radius, float inclinationDeg, float angleRad);
+float SpeedBiasFromControl(float speedControl);
+Vector3 CalculateOrbitTangent(float inclinationDeg, float angleRad);
+Vector3 CalculateCircularOrbitVelocity(float radius, float inclinationDeg, float angleRad, float speedControl);
+void SyncOrbitFieldsFromPosition(OrbitObject &object);
+void InitializeOrbitPhysics(OrbitObject &object);
 OrbitLayer ClassifyOrbitLayer(float orbitRadius);
 const char *OrbitLayerText(OrbitLayer layer);
 bool IsOrbitLayerMatch(OrbitLayer layer, float orbitRadius);
