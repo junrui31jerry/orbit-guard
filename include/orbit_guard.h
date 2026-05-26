@@ -97,6 +97,8 @@ struct RiskReport
     int firstIndex = -1;
     int secondIndex = -1;
     float distance = 0.0f;
+    bool predicted = false;
+    float closestApproachTime = 0.0f;
     RiskLevel level = RiskLevel::Low;
     std::string advice;
     Color color = GREEN;
@@ -242,6 +244,11 @@ void ApplyEscapeAndWindowClose(GameMode &mode,
 const char *RiskLevelText(RiskLevel level);
 RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects);
 RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObjects, int selectedObjectIndex);
+RiskReport PredictPairRisk(const std::vector<OrbitObject> &objects,
+                           int firstIndex,
+                           int secondIndex,
+                           float horizonSeconds = kPredictionHorizonSeconds,
+                           float stepSeconds = kPredictionStepSeconds);
 RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstIndex, int secondIndex);
 int FindControlledRiskObject(const RiskReport &report, const std::vector<OrbitObject> &objects);
 AvoidancePlan BuildAvoidancePlan(const RiskReport &report, const std::vector<OrbitObject> &objects);

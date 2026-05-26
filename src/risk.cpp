@@ -70,6 +70,30 @@ void FinalizeRiskReport(RiskReport &report)
     }
 }
 
+void StepPredictedObject(OrbitObject &object, float deltaTime)
+{
+    if (!object.physicsDriven)
+    {
+        object.position = Vector3Add(object.position, Vector3Scale(object.velocity, deltaTime));
+        return;
+    }
+
+    const float radius = Vector3Length(object.position);
+    if (radius <= kEarthRadius + 0.5f)
+    {
+        return;
+    }
+    if (Vector3Length(object.velocity) <= 0.0001f)
+    {
+        return;
+    }
+
+    const float radiusCubed = radius * radius * radius;
+    const Vector3 acceleration = Vector3Scale(object.position, -kEarthMu / radiusCubed);
+    object.velocity = Vector3Add(object.velocity, Vector3Scale(acceleration, deltaTime));
+    object.position = Vector3Add(object.position, Vector3Scale(object.velocity, deltaTime));
+}
+
 AvoidancePlan BuildAvoidancePlanWithEvaluator(const RiskReport &report,
                                               const std::vector<OrbitObject> &objects,
                                               int targetIndex,
@@ -184,16 +208,17 @@ RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObj
                 continue;
             }
 
-            const float distance = Vector3Distance(objects[selectedObjectIndex].position, objects[j].position);
-            if (distance < report.distance)
+            const RiskReport pairReport = PredictPairRisk(objects, selectedObjectIndex, j);
+            if (pairReport.distance < report.distance)
             {
-                report.distance = distance;
-                report.firstIndex = selectedObjectIndex < j ? selectedObjectIndex : j;
-                report.secondIndex = selectedObjectIndex < j ? j : selectedObjectIndex;
+                report = pairReport;
             }
         }
 
-        FinalizeRiskReport(report);
+        if (report.firstIndex < 0)
+        {
+            FinalizeRiskReport(report);
+        }
         return report;
     }
 
@@ -211,21 +236,26 @@ RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObj
                 continue;
             }
 
-            const float distance = Vector3Distance(objects[i].position, objects[j].position);
-            if (distance < report.distance)
+            const RiskReport pairReport = PredictPairRisk(objects, i, j);
+            if (pairReport.distance < report.distance)
             {
-                report.distance = distance;
-                report.firstIndex = i;
-                report.secondIndex = j;
+                report = pairReport;
             }
         }
     }
 
-    FinalizeRiskReport(report);
+    if (report.firstIndex < 0)
+    {
+        FinalizeRiskReport(report);
+    }
     return report;
 }
 
-RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstIndex, int secondIndex)
+RiskReport PredictPairRisk(const std::vector<OrbitObject> &objects,
+                           int firstIndex,
+                           int secondIndex,
+                           float horizonSeconds,
+                           float stepSeconds)
 {
     RiskReport report;
     if (firstIndex < 0 ||
@@ -240,9 +270,31 @@ RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstInd
 
     report.firstIndex = firstIndex < secondIndex ? firstIndex : secondIndex;
     report.secondIndex = firstIndex < secondIndex ? secondIndex : firstIndex;
-    report.distance = Vector3Distance(objects[firstIndex].position, objects[secondIndex].position);
+    OrbitObject first = objects[firstIndex];
+    OrbitObject second = objects[secondIndex];
+    report.distance = Vector3Distance(first.position, second.position);
+    report.closestApproachTime = 0.0f;
+    report.predicted = true;
+
+    for (float t = stepSeconds; t <= horizonSeconds + 0.001f; t += stepSeconds)
+    {
+        StepPredictedObject(first, stepSeconds);
+        StepPredictedObject(second, stepSeconds);
+        const float distance = Vector3Distance(first.position, second.position);
+        if (distance < report.distance)
+        {
+            report.distance = distance;
+            report.closestApproachTime = t;
+        }
+    }
+
     FinalizeRiskReport(report);
     return report;
+}
+
+RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstIndex, int secondIndex)
+{
+    return PredictPairRisk(objects, firstIndex, secondIndex);
 }
 
 int FindControlledRiskObject(const RiskReport &report, const std::vector<OrbitObject> &objects)
