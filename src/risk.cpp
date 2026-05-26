@@ -8,6 +8,10 @@ namespace OrbitGuard
 {
 namespace
 {
+constexpr int kMaxPredictionSteps = 2400;
+constexpr float kMinPredictionStepSeconds = 0.05f;
+constexpr float kMaxPredictionHorizonSeconds = 600.0f;
+
 bool IsVisibleForRisk(const OrbitObject &object, bool showDemoObjects)
 {
     return showDemoObjects || object.userControlled;
@@ -38,6 +42,36 @@ bool IsDebrisThreat(const std::vector<OrbitObject> &objects, int index)
     return index >= 0 &&
            index < static_cast<int>(objects.size()) &&
            objects[index].type == ObjectType::Debris;
+}
+
+float SanitizePredictionHorizon(float horizonSeconds)
+{
+    if (!std::isfinite(horizonSeconds) || horizonSeconds <= 0.0f)
+    {
+        return 0.0f;
+    }
+    if (horizonSeconds > kMaxPredictionHorizonSeconds)
+    {
+        return kMaxPredictionHorizonSeconds;
+    }
+    return horizonSeconds;
+}
+
+float SanitizePredictionStep(float stepSeconds)
+{
+    if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0f)
+    {
+        return kPredictionStepSeconds;
+    }
+    if (stepSeconds < kMinPredictionStepSeconds)
+    {
+        return kMinPredictionStepSeconds;
+    }
+    if (stepSeconds > kPredictionStepSeconds)
+    {
+        return kPredictionStepSeconds;
+    }
+    return stepSeconds;
 }
 
 void FinalizeRiskReport(RiskReport &report)
@@ -253,18 +287,26 @@ RiskReport PredictPairRisk(const std::vector<OrbitObject> &objects,
     report.closestApproachTime = 0.0f;
     report.predicted = true;
 
-    const float safeHorizonSeconds = std::isfinite(horizonSeconds) && horizonSeconds > 0.0f ? horizonSeconds : 0.0f;
-    const float safeStepSeconds = std::isfinite(stepSeconds) && stepSeconds > 0.0f ? stepSeconds : kPredictionStepSeconds;
-
-    for (float t = safeStepSeconds; t <= safeHorizonSeconds + 0.001f; t += safeStepSeconds)
+    const float safeHorizonSeconds = SanitizePredictionHorizon(horizonSeconds);
+    const float requestedStepSeconds = SanitizePredictionStep(stepSeconds);
+    int stepCount = safeHorizonSeconds > 0.0f
+                        ? static_cast<int>(std::ceil(safeHorizonSeconds / requestedStepSeconds))
+                        : 0;
+    if (stepCount > kMaxPredictionSteps)
     {
-        StepOrbitObject(first, safeStepSeconds);
-        StepOrbitObject(second, safeStepSeconds);
+        stepCount = kMaxPredictionSteps;
+    }
+    const float actualStepSeconds = stepCount > 0 ? safeHorizonSeconds / static_cast<float>(stepCount) : 0.0f;
+
+    for (int step = 1; step <= stepCount; ++step)
+    {
+        StepOrbitObject(first, actualStepSeconds);
+        StepOrbitObject(second, actualStepSeconds);
         const float distance = Vector3Distance(first.position, second.position);
         if (distance < report.distance)
         {
             report.distance = distance;
-            report.closestApproachTime = t;
+            report.closestApproachTime = actualStepSeconds * static_cast<float>(step);
         }
     }
 

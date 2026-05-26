@@ -76,6 +76,14 @@ int main()
     ok = Expect(zeroStepReport.predicted, "zero prediction step falls back to a bounded prediction") && ok;
     ok = Expect(zeroStepReport.closestApproachTime >= 0.0f, "zero prediction step does not produce invalid timing") && ok;
 
+    const RiskReport tinyStepReport = PredictPairRisk(objects, 0, 1, 1.0f, 0.000000001f);
+    ok = Expect(tinyStepReport.predicted, "tiny positive prediction step remains bounded") && ok;
+    ok = Expect(tinyStepReport.closestApproachTime <= 1.0f, "tiny positive prediction step respects the requested horizon") && ok;
+
+    const RiskReport hugeHorizonReport = PredictPairRisk(objects, 0, 1, 1000000000.0f, 0.5f);
+    ok = Expect(hugeHorizonReport.predicted, "huge prediction horizon remains bounded") && ok;
+    ok = Expect(hugeHorizonReport.closestApproachTime <= 600.0f, "huge prediction horizon is capped") && ok;
+
     const RiskReport negativeHorizonReport = PredictPairRisk(objects, 0, 1, -10.0f, 0.5f);
     ok = Expect(negativeHorizonReport.predicted, "negative prediction horizon still reports the current pair") && ok;
     ok = Expect(negativeHorizonReport.closestApproachTime == 0.0f, "negative prediction horizon clamps to current time") && ok;
