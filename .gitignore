@@ -25,6 +25,7 @@ downloads/
 
 # Local Superpowers/browser session scratch files
 .superpowers/
+.worktrees/
 
 # OS/editor noise
 Thumbs.db
