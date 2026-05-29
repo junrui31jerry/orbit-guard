@@ -64,6 +64,11 @@ int CountImpactDebris(const std::vector<OrbitObject> &objects)
     return count;
 }
 
+float RelativeSpeed(const OrbitObject &first, const OrbitObject &second)
+{
+    return Vector3Length(Vector3Subtract(first.velocity, second.velocity));
+}
+
 OrbitObject MakeObject(const char *name, ObjectType type, bool player, Vector3 position)
 {
     OrbitObject object;
@@ -77,6 +82,11 @@ OrbitObject MakeObject(const char *name, ObjectType type, bool player, Vector3 p
     object.initialAngleDeg = object.angleRad / kDegToRad;
     object.inclinationDeg = std::atan2(position.y, position.z) / kDegToRad;
     object.color = player ? YELLOW : ORANGE;
+    object.collisionRadius = type == ObjectType::Satellite ? kDefaultSatelliteCollisionRadius : kDefaultDebrisCollisionRadius;
+    object.velocity = CalculateCircularOrbitVelocity(object.orbitRadius,
+                                                     object.inclinationDeg,
+                                                     object.angleRad,
+                                                     object.angularSpeed == 0.0f ? kDefaultSpeedBiasControl : object.angularSpeed);
     return object;
 }
 
@@ -124,9 +134,8 @@ int main()
 
     UpdateEarthImmediateEvent(timeoutEvent, timeoutScan, timeoutObjects, timeoutReport, 0.0f);
     UpdateEarthImmediateEvent(timeoutEvent, timeoutScan, timeoutObjects, timeoutReport, 6.0f);
-    ok = Expect(FindPlayerSatelliteIndex(timeoutObjects) < 0, "unanswered warning eventually steers debris into contact") && ok;
-    ok = Expect(timeoutEvent.playerDestroyed, "intercept contact marks PlayerSat destroyed") && ok;
-    ok = Expect(timeoutEvent.result.find("destroyed") != std::string::npos, "intercept contact reports destruction") && ok;
+    ok = Expect(FindPlayerSatelliteIndex(timeoutObjects) >= 0, "warning updates do not teleport debris into PlayerSat") && ok;
+    ok = Expect(!timeoutEvent.playerDestroyed, "unanswered warning waits for physics motion before destruction") && ok;
 
     std::vector<OrbitObject> contactObjects = {
         MakeObject("PlayerSat", ObjectType::Satellite, true, {0.0f, 0.0f, 150.0f}),
@@ -179,15 +188,44 @@ int main()
                     scriptedImpactObjects[scriptedImpactEvent.targetIndex].name.find("Impact-Debris") == 0,
                 "impact warning targets a spawned debris object") &&
          ok;
+    const OrbitObject &scriptedImpactDebris = scriptedImpactObjects[scriptedImpactEvent.targetIndex];
+    ok = Expect(scriptedImpactDebris.physicsDriven, "spawned impact debris is physics driven") && ok;
+    ok = Expect(Vector3Length(scriptedImpactDebris.velocity) > 0.1f, "spawned impact debris has an initial velocity") && ok;
+    ok = Expect(RelativeSpeed(scriptedImpactDebris, scriptedImpactObjects[0]) < 5.5f,
+                "spawned impact debris relative speed stays playable") &&
+         ok;
+    const int scriptedThreatIndex = scriptedImpactEvent.targetIndex;
+    const float scriptedStartDistance = Vector3Distance(scriptedImpactObjects[0].position, scriptedImpactDebris.position);
 
-    for (int i = 0; i < 8 && FindPlayerSatelliteIndex(scriptedImpactObjects) >= 0; ++i)
+    float scriptedClosestDistance = scriptedStartDistance;
+    for (int i = 0; i < 24 && FindPlayerSatelliteIndex(scriptedImpactObjects) >= 0; ++i)
     {
         UpdateObjects(scriptedImpactObjects, 1.0f, 1.0f);
         UpdateEarthImmediateEvent(scriptedImpactEvent, scriptedImpactScan, scriptedImpactObjects, AnalyzeRisk(scriptedImpactObjects, true, 0), 1.0f);
+        if (scriptedThreatIndex >= 0 && scriptedThreatIndex < static_cast<int>(scriptedImpactObjects.size()))
+        {
+            scriptedClosestDistance = std::min(scriptedClosestDistance,
+                                               Vector3Distance(scriptedImpactObjects[0].position, scriptedImpactObjects[scriptedThreatIndex].position));
+        }
     }
-    ok = Expect(FindPlayerSatelliteIndex(scriptedImpactObjects) < 0, "spawned impact debris physically reaches PlayerSat after real frame updates") && ok;
-    ok = Expect(scriptedImpactEvent.playerDestroyed, "spawned impact contact marks PlayerSat destroyed") && ok;
-    ok = Expect(CountImpactDebris(scriptedImpactObjects) == 0, "spawned impact debris is removed after destroying PlayerSat") && ok;
+    ok = Expect(FindPlayerSatelliteIndex(scriptedImpactObjects) >= 0, "spawned impact debris does not destroy PlayerSat too quickly") && ok;
+    ok = Expect(!scriptedImpactEvent.playerDestroyed, "spawned impact warning does not use forced contact") && ok;
+    if (scriptedThreatIndex >= 0 && scriptedThreatIndex < static_cast<int>(scriptedImpactObjects.size()))
+    {
+        ok = Expect(scriptedClosestDistance < scriptedStartDistance, "spawned impact debris closes distance through physics") && ok;
+    }
+
+    std::vector<OrbitObject> impactContactObjects = {
+        MakeObject("PlayerSat", ObjectType::Satellite, true, {0.0f, 0.0f, 260.0f}),
+        MakeObject("Impact-Debris-77", ObjectType::Debris, false, {0.0f, 0.0f, 268.0f}),
+    };
+    ImmediateEventState impactContactEvent;
+    UnknownScanState impactContactScan;
+    StartCollisionWarning(impactContactEvent, 1, impactContactObjects[1].name);
+    UpdateEarthImmediateEvent(impactContactEvent, impactContactScan, impactContactObjects, AnalyzeRisk(impactContactObjects, true, 0), 0.1f);
+    ok = Expect(FindPlayerSatelliteIndex(impactContactObjects) < 0, "physical impact contact destroys PlayerSat") && ok;
+    ok = Expect(impactContactEvent.playerDestroyed, "physical impact contact marks PlayerSat destroyed") && ok;
+    ok = Expect(CountImpactDebris(impactContactObjects) == 0, "impact debris is removed after destroying PlayerSat") && ok;
 
     std::vector<OrbitObject> movingImpactObjects = {
         MakeObject("PlayerSat", ObjectType::Satellite, true, {0.0f, 0.0f, 260.0f}),
@@ -199,14 +237,22 @@ int main()
     UpdateEarthImmediateEvent(movingImpactEvent, movingImpactScan, movingImpactObjects, AnalyzeRisk(movingImpactObjects, true, 0), 0.0f);
     UpdateEarthImmediateEvent(movingImpactEvent, movingImpactScan, movingImpactObjects, AnalyzeRisk(movingImpactObjects, true, 0), 5.2f);
     ok = Expect(movingImpactEvent.type == ImmediateEventType::CollisionWarning, "moving PlayerSat receives a scripted impact warning") && ok;
+    const int movingThreatIndex = movingImpactEvent.targetIndex;
+    const float movingStartDistance = movingThreatIndex >= 0
+                                          ? Vector3Distance(movingImpactObjects[0].position, movingImpactObjects[movingThreatIndex].position)
+                                          : 0.0f;
 
     for (int i = 0; i < 24 && FindPlayerSatelliteIndex(movingImpactObjects) >= 0; ++i)
     {
         UpdateObjects(movingImpactObjects, 0.5f, 1.0f);
         UpdateEarthImmediateEvent(movingImpactEvent, movingImpactScan, movingImpactObjects, AnalyzeRisk(movingImpactObjects, true, 0), 0.5f);
     }
-    ok = Expect(FindPlayerSatelliteIndex(movingImpactObjects) < 0, "scripted impact debris catches a moving PlayerSat") && ok;
-    ok = Expect(movingImpactEvent.playerDestroyed, "moving PlayerSat impact marks destruction") && ok;
+    ok = Expect(FindPlayerSatelliteIndex(movingImpactObjects) >= 0, "moving PlayerSat is not destroyed by an over-fast scripted impact") && ok;
+    if (movingThreatIndex >= 0 && movingThreatIndex < static_cast<int>(movingImpactObjects.size()))
+    {
+        const float movingEndDistance = Vector3Distance(movingImpactObjects[0].position, movingImpactObjects[movingThreatIndex].position);
+        ok = Expect(movingEndDistance < movingStartDistance, "moving impact debris closes distance through physics") && ok;
+    }
 
     std::vector<OrbitObject> avoidanceObjects = {
         MakeObject("PlayerSat", ObjectType::Satellite, true, {0.0f, 0.0f, 260.0f}),

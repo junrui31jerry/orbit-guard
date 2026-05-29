@@ -9,14 +9,11 @@ namespace
 {
 constexpr float kScanDuration = 1.6f;
 constexpr float kResolvedEventHoldSeconds = 3.0f;
-constexpr float kCollisionContactDistance = 14.0f;
 constexpr float kThreatClearDistance = kMediumRiskDistance + 18.0f;
-constexpr float kInterceptionDelay = 2.5f;
-constexpr float kInterceptionSpeed = 18.0f;
-constexpr float kScriptedImpactSpeed = 240.0f;
-constexpr float kScriptedImpactContactSeconds = 5.0f;
 constexpr float kImpactEventDelay = 5.0f;
-constexpr float kImpactSpawnDistance = 72.0f;
+constexpr float kImpactSpawnDistance = 96.0f;
+constexpr float kImpactMinClosingSpeed = 2.4f;
+constexpr float kImpactMaxClosingSpeed = 4.6f;
 constexpr float kNextScanDelay = 8.0f;
 const Color kUnknownObjectColor = {255, 72, 236, 255};
 const Color kImpactDebrisColor = {255, 96, 40, 255};
@@ -55,6 +52,20 @@ float DistanceBetweenObjects(const std::vector<OrbitObject> &objects, int firstI
     return Vector3Distance(objects[firstIndex].position, objects[secondIndex].position);
 }
 
+float ContactDistance(const OrbitObject &first, const OrbitObject &second)
+{
+    return first.collisionRadius + second.collisionRadius;
+}
+
+Vector3 NormalizeOrFallback(Vector3 value, Vector3 fallback)
+{
+    if (Vector3Length(value) <= 0.001f)
+    {
+        return fallback;
+    }
+    return Vector3Normalize(value);
+}
+
 void SyncOrbitWithPosition(OrbitObject &object)
 {
     const float radius = Vector3Length(object.position);
@@ -63,63 +74,7 @@ void SyncOrbitWithPosition(OrbitObject &object)
         return;
     }
 
-    const float yzRadius = std::sqrt(object.position.y * object.position.y + object.position.z * object.position.z);
-    object.orbitRadius = radius;
-    object.angleRad = std::atan2(yzRadius, object.position.x);
-    object.inclinationDeg = std::atan2(object.position.y, object.position.z) / kDegToRad;
-    object.initialAngleDeg = object.angleRad / kDegToRad;
-    while (object.initialAngleDeg < 0.0f)
-    {
-        object.initialAngleDeg += 360.0f;
-    }
-    while (object.initialAngleDeg >= 360.0f)
-    {
-        object.initialAngleDeg -= 360.0f;
-    }
-}
-
-float AdvanceThreatTowardPlayer(ImmediateEventState &event,
-                                std::vector<OrbitObject> &objects,
-                                int playerIndex,
-                                int threatIndex,
-                                float deltaTime,
-                                bool scriptedImpact)
-{
-    const float previousTimer = event.timer;
-    event.timer += deltaTime;
-
-    OrbitObject &threat = objects[threatIndex];
-    if (scriptedImpact && event.timer >= kScriptedImpactContactSeconds)
-    {
-        threat.position = objects[playerIndex].position;
-        threat.angularSpeed = 0.0f;
-        SyncOrbitWithPosition(threat);
-        return 0.0f;
-    }
-
-    float activeDelta = 0.0f;
-    if (event.timer > kInterceptionDelay)
-    {
-        activeDelta = previousTimer >= kInterceptionDelay ? deltaTime : event.timer - kInterceptionDelay;
-    }
-    if (activeDelta <= 0.0f)
-    {
-        return DistanceBetweenObjects(objects, playerIndex, threatIndex);
-    }
-
-    const Vector3 toPlayer = Vector3Subtract(objects[playerIndex].position, threat.position);
-    const float distance = Vector3Length(toPlayer);
-    if (distance <= 0.001f)
-    {
-        return 0.0f;
-    }
-
-    const float speed = scriptedImpact ? kScriptedImpactSpeed : kInterceptionSpeed;
-    const float step = std::min(distance, speed * activeDelta);
-    threat.position = Vector3Add(threat.position, Vector3Scale(toPlayer, step / distance));
-    threat.angularSpeed = 0.0f;
-    SyncOrbitWithPosition(threat);
-    return DistanceBetweenObjects(objects, playerIndex, threatIndex);
+    SyncOrbitFieldsFromPosition(object);
 }
 
 std::string MakeUnknownObjectName(int objectNumber)
@@ -164,20 +119,22 @@ int FindObjectByName(const std::vector<OrbitObject> &objects, const std::string 
     return -1;
 }
 
+Vector3 ImpactSpawnDirection(const OrbitObject &player);
+Vector3 ImpactDebrisVelocityForPlayer(const OrbitObject &player, const Vector3 &debrisPosition);
+
 OrbitObject CreateUnknownObjectNearPlayer(const OrbitObject &player, const std::string &name)
 {
     OrbitObject object;
     object.name = name;
     object.type = ObjectType::Debris;
-    object.orbitRadius = ClampFloat(player.orbitRadius + 48.0f, 85.0f, 330.0f);
-    object.inclinationDeg = ClampFloat(player.inclinationDeg + 9.0f, -75.0f, 75.0f);
-    object.angularSpeed = player.angularSpeed == 0.0f ? -0.28f : player.angularSpeed * 0.72f;
-    object.initialAngleDeg = player.initialAngleDeg + 34.0f;
-    object.initialAngleDeg = NormalizeAngleDegrees(object.initialAngleDeg);
-    object.angleRad = object.initialAngleDeg * kDegToRad;
-    object.position = CalculateOrbitPosition(object.orbitRadius, object.inclinationDeg, object.angleRad);
+    object.angularSpeed = player.angularSpeed;
+    object.position = Vector3Add(player.position, Vector3Scale(ImpactSpawnDirection(player), kImpactSpawnDistance));
     object.color = kUnknownObjectColor;
     object.userControlled = false;
+    object.collisionRadius = kDefaultDebrisCollisionRadius;
+    object.physicsDriven = true;
+    SyncOrbitWithPosition(object);
+    object.velocity = ImpactDebrisVelocityForPlayer(player, object.position);
     return object;
 }
 
@@ -198,16 +155,40 @@ Vector3 ImpactSpawnDirection(const OrbitObject &player)
     return Vector3Normalize(Vector3Add(Vector3Scale(radial, 0.82f), Vector3Scale(tangent, 0.18f)));
 }
 
+Vector3 ImpactDebrisVelocityForPlayer(const OrbitObject &player, const Vector3 &debrisPosition)
+{
+    Vector3 playerVelocity = player.velocity;
+    if (Vector3Length(playerVelocity) <= 0.001f)
+    {
+        const float speedControl = player.angularSpeed == 0.0f ? kDefaultSpeedBiasControl : player.angularSpeed;
+        playerVelocity = CalculateCircularOrbitVelocity(player.orbitRadius, player.inclinationDeg, player.angleRad, speedControl);
+    }
+
+    const Vector3 toPlayer = NormalizeOrFallback(Vector3Subtract(player.position, debrisPosition), Vector3Scale(ImpactSpawnDirection(player), -1.0f));
+    const float closingSpeed = ClampFloat(std::max(Vector3Length(playerVelocity) * 0.14f, kImpactMinClosingSpeed),
+                                          kImpactMinClosingSpeed,
+                                          kImpactMaxClosingSpeed);
+    return Vector3Add(playerVelocity, Vector3Scale(toPlayer, closingSpeed));
+}
+
+void ConfigureImpactDebrisForPlayer(OrbitObject &object, const OrbitObject &player, int impactNumber)
+{
+    object.name = MakeImpactDebrisName(impactNumber);
+    object.type = ObjectType::Debris;
+    object.color = kImpactDebrisColor;
+    object.userControlled = false;
+    object.collisionRadius = kDefaultDebrisCollisionRadius;
+    object.physicsDriven = true;
+    SyncOrbitWithPosition(object);
+    object.velocity = ImpactDebrisVelocityForPlayer(player, object.position);
+}
+
 OrbitObject CreateImpactDebrisForPlayer(const OrbitObject &player, int impactNumber)
 {
     OrbitObject object;
-    object.name = MakeImpactDebrisName(impactNumber);
-    object.type = ObjectType::Debris;
-    object.angularSpeed = 0.0f;
     object.position = Vector3Add(player.position, Vector3Scale(ImpactSpawnDirection(player), kImpactSpawnDistance));
-    object.color = kImpactDebrisColor;
-    object.userControlled = false;
-    SyncOrbitWithPosition(object);
+    object.angularSpeed = player.angularSpeed;
+    ConfigureImpactDebrisForPlayer(object, player, impactNumber);
     return object;
 }
 
@@ -240,11 +221,28 @@ void StartScriptedImpactEvent(ImmediateEventState &event,
                               std::vector<OrbitObject> &objects,
                               int playerIndex)
 {
-    objects.push_back(CreateImpactDebrisForPlayer(objects[playerIndex], scan.nextImpactNumber));
+    const bool wasScanning = scan.scanning;
+    int targetIndex = -1;
+    if (scan.objectActive && scan.objectIndex >= 0 && scan.objectIndex < static_cast<int>(objects.size()))
+    {
+        targetIndex = scan.objectIndex;
+        ConfigureImpactDebrisForPlayer(objects[targetIndex], objects[playerIndex], scan.nextImpactNumber);
+    }
+    else
+    {
+        objects.push_back(CreateImpactDebrisForPlayer(objects[playerIndex], scan.nextImpactNumber));
+        targetIndex = static_cast<int>(objects.size()) - 1;
+    }
     scan.nextImpactNumber++;
     scan.collisionEventTimer = 0.0f;
+    scan.objectActive = false;
+    scan.scanning = wasScanning;
+    scan.identified = false;
+    scan.objectIndex = -1;
+    scan.progress = 0.0f;
+    scan.cooldownTimer = 0.0f;
+    scan.objectName.clear();
 
-    const int targetIndex = static_cast<int>(objects.size()) - 1;
     StartCollisionWarning(event, targetIndex, objects[targetIndex].name);
     event.detail = objects[targetIndex].name + " is on a direct impact path toward PlayerSat";
     event.action = "Press A before the debris touches PlayerSat.";
@@ -357,18 +355,14 @@ bool UpdateActiveCollisionWarning(ImmediateEventState &event,
         return true;
     }
 
-    objects[event.targetIndex].angularSpeed = 0.0f;
-    SyncOrbitWithPosition(objects[event.targetIndex]);
-    const bool scriptedImpact = IsScriptedImpactThreat(objects, event.targetIndex);
-
     float currentDistance = DistanceBetweenObjects(objects, playerIndex, event.targetIndex);
-    if (currentDistance <= kCollisionContactDistance)
+    if (currentDistance <= ContactDistance(objects[playerIndex], objects[event.targetIndex]))
     {
         DestroyPlayerSatellite(event, objects, playerIndex, "PlayerSat made contact with debris");
         return true;
     }
 
-    if (!scriptedImpact && currentDistance > kThreatClearDistance)
+    if (currentDistance > kThreatClearDistance && event.timer > 2.0f)
     {
         event.phase = ImmediateEventPhase::Resolved;
         event.timer = 0.0f;
@@ -377,13 +371,7 @@ bool UpdateActiveCollisionWarning(ImmediateEventState &event,
         return true;
     }
 
-    currentDistance = AdvanceThreatTowardPlayer(event, objects, playerIndex, event.targetIndex, deltaTime, scriptedImpact);
-    if (currentDistance <= kCollisionContactDistance)
-    {
-        DestroyPlayerSatellite(event, objects, playerIndex, "PlayerSat made contact with debris");
-        return true;
-    }
-
+    event.timer += deltaTime;
     event.action = "Press A before contact. Current distance " + FormatFloat(currentDistance, 1) + " km.";
     return true;
 }
