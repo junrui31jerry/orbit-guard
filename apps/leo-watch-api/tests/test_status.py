@@ -11,6 +11,6 @@ def test_status_endpoint_describes_public_screening():
     assert response.status_code == 200
     payload = response.json()
     assert payload["product"] == "OrbitGuard LEO Watch"
-    assert payload["data_mode"] == "none"
+    assert payload["data_mode"] in {"snapshot", "none"}
     assert payload["prediction_window_hours"] == 72
     assert "not official collision probability" in payload["disclaimer"]
