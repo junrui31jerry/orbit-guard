@@ -21,3 +21,12 @@ def test_events_endpoint_accepts_risk_mode():
 
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_api_allows_local_dashboard_origin():
+    client = TestClient(create_app(load_live_on_start=False))
+
+    response = client.get("/api/status", headers={"Origin": "http://127.0.0.1:3000"})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3000"

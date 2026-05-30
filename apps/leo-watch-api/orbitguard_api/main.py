@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from orbitguard_api.config import PREDICTION_HOURS
 from orbitguard_api.models import ApiStatus, RiskEvent, RiskMode, Summary
@@ -18,6 +19,13 @@ def create_app(*, load_live_on_start: bool = False) -> FastAPI:
         yield
 
     app = FastAPI(title="OrbitGuard LEO Watch API", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/api/status", response_model=ApiStatus)
     def status() -> ApiStatus:
