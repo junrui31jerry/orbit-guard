@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { fetchEvents, fetchStatus, fetchSummary } from "./api";
+import EarthView from "./EarthView";
 import type { ApiStatus, RiskEvent, RiskMode, Summary } from "./types";
 import "./styles.css";
 
@@ -90,7 +91,7 @@ export default function App() {
         </div>
 
         <div className="event-panel">
-          <div className="earth-placeholder" aria-label="3D Earth event view" />
+          <EarthView />
           {selected && (
             <article>
               <h2>
