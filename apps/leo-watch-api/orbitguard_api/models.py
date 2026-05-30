@@ -21,6 +21,11 @@ class RiskLevel(StrEnum):
     WATCH = "watch"
 
 
+class ActivityStatus(StrEnum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+
 class ApiStatus(BaseModel):
     product: str = "OrbitGuard LEO Watch"
     data_mode: DataMode = DataMode.NONE
@@ -79,3 +84,30 @@ class TrajectoryResponse(BaseModel):
     primary_samples: list[PositionSample]
     secondary_samples: list[PositionSample]
     closest_approach_sample: PositionSample
+
+
+class OrbitObject(BaseModel):
+    catalog_id: str
+    name: str
+    object_type: str
+    activity_status: ActivityStatus
+    epoch: datetime
+    mean_motion: float
+    eccentricity: float
+    inclination_deg: float
+    raan_deg: float
+    arg_perigee_deg: float
+    mean_anomaly_deg: float
+    bstar: float = 0.0
+    mean_motion_dot: float = 0.0
+    mean_motion_ddot: float = 0.0
+    source: str = "CelesTrak"
+    perigee_altitude_km: float | None = None
+    apogee_altitude_km: float | None = None
+    data_quality_flags: list[str] = Field(default_factory=list)
+
+
+class ScreeningRun(BaseModel):
+    data_mode: DataMode
+    source_updated_at: datetime
+    objects: list[OrbitObject]
