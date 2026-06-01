@@ -4,6 +4,7 @@
 #include "raylib.h"
 #include "raymath.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,15 @@ inline constexpr float kDegToRad = kPi / 180.0f;
 inline constexpr float kEarthRadius = 46.0f;
 inline constexpr float kHighRiskDistance = 35.0f;
 inline constexpr float kMediumRiskDistance = 85.0f;
+inline constexpr float kReferenceOrbitRadius = 165.0f;
+inline constexpr float kReferenceOrbitPeriodSeconds = 60.0f;
+inline constexpr float kDefaultSpeedBiasControl = 0.48f;
+inline constexpr float kEarthMu = (4.0f * kPi * kPi * kReferenceOrbitRadius * kReferenceOrbitRadius * kReferenceOrbitRadius) /
+                                  (kReferenceOrbitPeriodSeconds * kReferenceOrbitPeriodSeconds);
+inline constexpr float kPredictionHorizonSeconds = 120.0f;
+inline constexpr float kPredictionStepSeconds = 0.5f;
+inline constexpr float kDefaultSatelliteCollisionRadius = 8.0f;
+inline constexpr float kDefaultDebrisCollisionRadius = 6.0f;
 
 enum class ObjectType
 {
@@ -34,6 +44,38 @@ enum class RiskLevel
     High
 };
 
+enum class GameMode
+{
+    MainMenu,
+    EarthSpace,
+    SolarSystem,
+    BlackHole
+};
+
+enum class OrbitLayer
+{
+    BelowOperational,
+    LEO,
+    MEO,
+    GEO,
+    BeyondOperational
+};
+
+enum class ImmediateEventType
+{
+    None,
+    CollisionWarning,
+    UnknownObject
+};
+
+enum class ImmediateEventPhase
+{
+    Inactive,
+    WaitingForPlayer,
+    Animating,
+    Resolved
+};
+
 struct OrbitObject
 {
     std::string name;
@@ -46,6 +88,9 @@ struct OrbitObject
     Vector3 position = {};
     Color color = WHITE;
     bool userControlled = false;
+    Vector3 velocity = {};
+    float collisionRadius = kDefaultSatelliteCollisionRadius;
+    bool physicsDriven = true;
 };
 
 struct RiskReport
@@ -53,6 +98,8 @@ struct RiskReport
     int firstIndex = -1;
     int secondIndex = -1;
     float distance = 0.0f;
+    bool predicted = false;
+    float closestApproachTime = 0.0f;
     RiskLevel level = RiskLevel::Low;
     std::string advice;
     Color color = GREEN;
@@ -106,26 +153,133 @@ struct MissionState
     std::string nextActionText = "Next: Adjust orbit settings, then press L to launch.";
 };
 
+struct EarthMissionState
+{
+    OrbitLayer targetLayer = OrbitLayer::MEO;
+    bool playerSatDeployed = false;
+    bool deploymentComplete = false;
+    std::string title = "Deploy PlayerSat to MEO orbit";
+    std::string description = "Ground stations need a medium-orbit relay. Adjust Orbit Radius into MEO, then press L.";
+    std::string nextAction = "Adjust Orbit Radius into MEO, then press L to deploy PlayerSat.";
+};
+
+struct ImmediateEventState
+{
+    ImmediateEventType type = ImmediateEventType::None;
+    ImmediateEventPhase phase = ImmediateEventPhase::Inactive;
+    int targetIndex = -1;
+    float timer = 0.0f;
+    bool playerDestroyed = false;
+    Vector3 explosionPosition = {};
+    std::string title;
+    std::string detail;
+    std::string action;
+    std::string result;
+};
+
+struct AvoidanceAnimationState
+{
+    bool active = false;
+    int objectIndex = -1;
+    float elapsed = 0.0f;
+    float duration = 1.8f;
+    OrbitObject startObject = {};
+    OrbitObject endObject = {};
+    float beforeDistance = 0.0f;
+    float afterDistance = 0.0f;
+};
+
+struct UnknownScanState
+{
+    bool objectActive = false;
+    bool scanning = false;
+    bool identified = false;
+    int objectIndex = -1;
+    float progress = 0.0f;
+    float cooldownTimer = 0.0f;
+    float collisionEventTimer = 0.0f;
+    int nextObjectNumber = 1;
+    int nextImpactNumber = 1;
+    std::string objectName;
+    ObjectType revealedType = ObjectType::Debris;
+};
+
+struct ShipState
+{
+    Vector3 position = {0.0f, 0.0f, 260.0f};
+    float yaw = 0.0f;
+    float speed = 0.0f;
+};
+
 float ClampFloat(float value, float minimum, float maximum);
 Vector3 CalculateOrbitPosition(float radius, float inclinationDeg, float angleRad);
+float SpeedBiasFromControl(float speedControl);
+Vector3 CalculateOrbitTangent(float inclinationDeg, float angleRad);
+Vector3 CalculateCircularOrbitVelocity(float radius, float inclinationDeg, float angleRad, float speedControl);
+void SyncOrbitFieldsFromPosition(OrbitObject &object);
+void InitializeOrbitPhysics(OrbitObject &object);
+void RefreshObjectPosition(OrbitObject &object);
+inline void StepOrbitObject(OrbitObject &object, float deltaTime)
+{
+    if (!object.physicsDriven)
+    {
+        object.angleRad += object.angularSpeed * deltaTime;
+        object.angleRad = std::fmod(object.angleRad, 2.0f * kPi);
+        RefreshObjectPosition(object);
+        return;
+    }
+
+    const float radius = Vector3Length(object.position);
+    if (radius <= kEarthRadius + 0.5f)
+    {
+        return;
+    }
+
+    const float radiusCubed = radius * radius * radius;
+    const Vector3 acceleration = Vector3Scale(object.position, -kEarthMu / radiusCubed);
+    object.velocity = Vector3Add(object.velocity, Vector3Scale(acceleration, deltaTime));
+    object.position = Vector3Add(object.position, Vector3Scale(object.velocity, deltaTime));
+    SyncOrbitFieldsFromPosition(object);
+}
+OrbitLayer ClassifyOrbitLayer(float orbitRadius);
+const char *OrbitLayerText(OrbitLayer layer);
+bool IsOrbitLayerMatch(OrbitLayer layer, float orbitRadius);
+Color OrbitLayerColor(OrbitLayer layer);
 const char *LaunchFieldName(int selectedField);
 void AdjustLaunchSettings(LaunchSettings &settings, float direction, bool largeStep);
 OrbitObject CreateUserSatellite(LaunchSettings &settings);
+OrbitObject CreatePlayerSatellite(const LaunchSettings &settings);
+int FindPlayerSatelliteIndex(const std::vector<OrbitObject> &objects);
+int CountPlayerSatellites(const std::vector<OrbitObject> &objects);
+int UpsertPlayerSatellite(std::vector<OrbitObject> &objects, const LaunchSettings &settings);
 std::vector<OrbitObject> CreateDemoObjects();
 void ResetObjects(std::vector<OrbitObject> &objects);
 void UpdateObjects(std::vector<OrbitObject> &objects, float deltaTime, float timeScale);
-void RefreshObjectPosition(OrbitObject &object);
 void UpdateOrbitCamera(OrbitCameraState &state, Camera3D &camera);
+Rectangle BackToMenuButtonBounds();
+bool IsPointInBackToMenuButton(Vector2 point);
+void ApplyEscapeAndWindowClose(GameMode &mode,
+                               bool &shouldClose,
+                               bool escapePressed,
+                               bool escapeDown,
+                               bool windowCloseRequested);
 
 const char *RiskLevelText(RiskLevel level);
 RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects);
 RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObjects, int selectedObjectIndex);
+RiskReport PredictPairRisk(const std::vector<OrbitObject> &objects,
+                           int firstIndex,
+                           int secondIndex,
+                           float horizonSeconds = kPredictionHorizonSeconds,
+                           float stepSeconds = kPredictionStepSeconds);
+RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstIndex, int secondIndex);
 int FindControlledRiskObject(const RiskReport &report, const std::vector<OrbitObject> &objects);
 AvoidancePlan BuildAvoidancePlan(const RiskReport &report, const std::vector<OrbitObject> &objects);
 AvoidancePlan BuildAvoidancePlan(const RiskReport &report,
                                  const std::vector<OrbitObject> &objects,
                                  bool showDemoObjects,
                                  int selectedObjectIndex);
+AvoidancePlan BuildAvoidancePlanForThreat(const std::vector<OrbitObject> &objects, int threatIndex);
 void ApplyAvoidancePlan(std::vector<OrbitObject> &objects, const AvoidancePlan &plan);
 void ResetMissionState(MissionState &mission);
 void MarkMissionLaunched(MissionState &mission);
@@ -138,6 +292,34 @@ void UpdateMissionState(MissionState &mission,
 bool MissionStepCompleted(const MissionState &mission, MissionStep step, RiskLevel currentRiskLevel);
 const char *MissionStepTitle(MissionStep step);
 const char *MissionStepStatusText(const MissionState &mission, MissionStep step, RiskLevel currentRiskLevel);
+void UpdateEarthMissionBeforeLaunch(EarthMissionState &mission, const LaunchSettings &settings);
+void UpdateEarthMissionAfterLaunch(EarthMissionState &mission, const std::vector<OrbitObject> &objects);
+void ResetImmediateEvent(ImmediateEventState &event);
+void StartCollisionWarning(ImmediateEventState &event, int targetIndex, const std::string &targetName);
+void StartUnknownObjectEvent(ImmediateEventState &event, UnknownScanState &scan, int objectIndex);
+bool CanStartUnknownScan(const ImmediateEventState &event, const UnknownScanState &scan, int selectedObjectIndex);
+void BeginUnknownScan(ImmediateEventState &event, UnknownScanState &scan);
+void UpdateUnknownScan(ImmediateEventState &event, UnknownScanState &scan, float deltaTime);
+void UpdateEarthImmediateEvent(ImmediateEventState &event,
+                               UnknownScanState &scan,
+                               std::vector<OrbitObject> &objects,
+                               const RiskReport &report,
+                               float deltaTime);
+bool BeginAvoidanceAnimation(AvoidanceAnimationState &animation,
+                             ImmediateEventState &event,
+                             const std::vector<OrbitObject> &objects,
+                             const AvoidancePlan &plan);
+void UpdateAvoidanceAnimation(AvoidanceAnimationState &animation,
+                              ImmediateEventState &event,
+                              std::vector<OrbitObject> &objects,
+                              float deltaTime);
+void ResetShip(ShipState &ship, Vector3 position, float yaw);
+void UpdateShipFromInput(ShipState &ship, float deltaTime);
+void MoveShipForward(ShipState &ship, float deltaTime, float speed);
+bool IsInsideBlackHoleTransferRange(const ShipState &ship, float eventHorizonRadius);
+void DrawShip(const ShipState &ship, Color color);
+void DrawSolarSystemMode(const ShipState &ship);
+void DrawBlackHoleMode(const ShipState &ship, bool transferred);
 
 std::string FormatFloat(float value, int precision = 1);
 std::string PairName(const RiskReport &report, const std::vector<OrbitObject> &objects);
@@ -150,7 +332,17 @@ bool ExportRiskReport(const RiskReport &report,
 
 void DrawStarField();
 void DrawOrbitPath(float radius, float inclinationDeg, Color color);
-void DrawSpaceObject(const OrbitObject &object, bool highlighted);
+void DrawSolarSystemBackground();
+void DrawOrbitLayerBands();
+void DrawSpaceObject(const OrbitObject &object, Color frameColor);
+void DrawBackToMenuButton(Vector2 mousePosition);
+void DrawMainMenu(int selectedMenuItem);
+void DrawModeTitle(const char *title, const char *subtitle);
+void DrawImmediateEventBanner(const ImmediateEventState &event, const UnknownScanState &scan);
+Color SelectedFrameColor(const ImmediateEventState &event,
+                         const EarthMissionState &earthMission,
+                         const std::vector<OrbitObject> &objects,
+                         int selectedObjectIndex);
 int DrawWrappedText(const std::string &text, int x, int y, int maxWidth, int fontSize, int spacing, Color color);
 void DrawInfoPanel(const RiskReport &report,
                    const std::vector<OrbitObject> &objects,
@@ -161,6 +353,9 @@ void DrawInfoPanel(const RiskReport &report,
                    const LaunchSettings &launchSettings,
                    const AvoidancePlan &avoidancePlan,
                    const MissionState &missionState,
+                   const EarthMissionState &earthMission,
+                   const ImmediateEventState &activeEvent,
+                   const UnknownScanState &unknownScan,
                    bool showDemoObjects,
                    int selectedObjectIndex,
                    float actionMessageTimer,

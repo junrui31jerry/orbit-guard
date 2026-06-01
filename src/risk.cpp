@@ -1,11 +1,17 @@
 #include "orbit_guard.h"
 
+#include <cmath>
+#include <functional>
 #include <limits>
 
 namespace OrbitGuard
 {
 namespace
 {
+constexpr int kMaxPredictionSteps = 2400;
+constexpr float kMinPredictionStepSeconds = 0.05f;
+constexpr float kMaxPredictionHorizonSeconds = 600.0f;
+
 bool IsVisibleForRisk(const OrbitObject &object, bool showDemoObjects)
 {
     return showDemoObjects || object.userControlled;
@@ -16,6 +22,56 @@ bool IsValidVisibleIndex(const std::vector<OrbitObject> &objects, int index, boo
     return index >= 0 &&
            index < static_cast<int>(objects.size()) &&
            IsVisibleForRisk(objects[index], showDemoObjects);
+}
+
+int OtherRiskIndex(const RiskReport &report, int objectIndex)
+{
+    if (report.firstIndex == objectIndex)
+    {
+        return report.secondIndex;
+    }
+    if (report.secondIndex == objectIndex)
+    {
+        return report.firstIndex;
+    }
+    return -1;
+}
+
+bool IsDebrisThreat(const std::vector<OrbitObject> &objects, int index)
+{
+    return index >= 0 &&
+           index < static_cast<int>(objects.size()) &&
+           objects[index].type == ObjectType::Debris;
+}
+
+float SanitizePredictionHorizon(float horizonSeconds)
+{
+    if (!std::isfinite(horizonSeconds) || horizonSeconds <= 0.0f)
+    {
+        return 0.0f;
+    }
+    if (horizonSeconds > kMaxPredictionHorizonSeconds)
+    {
+        return kMaxPredictionHorizonSeconds;
+    }
+    return horizonSeconds;
+}
+
+float SanitizePredictionStep(float stepSeconds)
+{
+    if (!std::isfinite(stepSeconds) || stepSeconds <= 0.0f)
+    {
+        return kPredictionStepSeconds;
+    }
+    if (stepSeconds < kMinPredictionStepSeconds)
+    {
+        return kMinPredictionStepSeconds;
+    }
+    if (stepSeconds > kPredictionStepSeconds)
+    {
+        return kPredictionStepSeconds;
+    }
+    return stepSeconds;
 }
 
 void FinalizeRiskReport(RiskReport &report)
@@ -48,111 +104,24 @@ void FinalizeRiskReport(RiskReport &report)
         report.advice = "Stable condition: continue routine monitoring.";
     }
 }
-} // namespace
 
-const char *RiskLevelText(RiskLevel level)
-{
-    switch (level)
-    {
-    case RiskLevel::High:
-        return "HIGH";
-    case RiskLevel::Medium:
-        return "MEDIUM";
-    case RiskLevel::Low:
-    default:
-        return "LOW";
-    }
-}
-
-RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects)
-{
-    return AnalyzeRisk(objects, true, -1);
-}
-
-RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObjects, int selectedObjectIndex)
-{
-    RiskReport report;
-    report.distance = std::numeric_limits<float>::max();
-
-    if (IsValidVisibleIndex(objects, selectedObjectIndex, showDemoObjects))
-    {
-        for (int j = 0; j < static_cast<int>(objects.size()); ++j)
-        {
-            if (j == selectedObjectIndex || !IsVisibleForRisk(objects[j], showDemoObjects))
-            {
-                continue;
-            }
-
-            const float distance = Vector3Distance(objects[selectedObjectIndex].position, objects[j].position);
-            if (distance < report.distance)
-            {
-                report.distance = distance;
-                report.firstIndex = selectedObjectIndex < j ? selectedObjectIndex : j;
-                report.secondIndex = selectedObjectIndex < j ? j : selectedObjectIndex;
-            }
-        }
-
-        FinalizeRiskReport(report);
-        return report;
-    }
-
-    for (int i = 0; i < static_cast<int>(objects.size()); ++i)
-    {
-        if (!IsVisibleForRisk(objects[i], showDemoObjects))
-        {
-            continue;
-        }
-
-        for (int j = i + 1; j < static_cast<int>(objects.size()); ++j)
-        {
-            if (!IsVisibleForRisk(objects[j], showDemoObjects))
-            {
-                continue;
-            }
-
-            const float distance = Vector3Distance(objects[i].position, objects[j].position);
-            if (distance < report.distance)
-            {
-                report.distance = distance;
-                report.firstIndex = i;
-                report.secondIndex = j;
-            }
-        }
-    }
-
-    FinalizeRiskReport(report);
-    return report;
-}
-
-int FindControlledRiskObject(const RiskReport &report, const std::vector<OrbitObject> &objects)
-{
-    if (report.firstIndex >= 0 && report.firstIndex < static_cast<int>(objects.size()) && objects[report.firstIndex].userControlled)
-    {
-        return report.firstIndex;
-    }
-    if (report.secondIndex >= 0 && report.secondIndex < static_cast<int>(objects.size()) && objects[report.secondIndex].userControlled)
-    {
-        return report.secondIndex;
-    }
-    return -1;
-}
-
-AvoidancePlan BuildAvoidancePlan(const RiskReport &report, const std::vector<OrbitObject> &objects)
-{
-    return BuildAvoidancePlan(report, objects, true, -1);
-}
-
-AvoidancePlan BuildAvoidancePlan(const RiskReport &report,
-                                 const std::vector<OrbitObject> &objects,
-                                 bool showDemoObjects,
-                                 int selectedObjectIndex)
+AvoidancePlan BuildAvoidancePlanWithEvaluator(const RiskReport &report,
+                                              const std::vector<OrbitObject> &objects,
+                                              int targetIndex,
+                                              const std::function<RiskReport(const std::vector<OrbitObject> &)> &evaluateRisk)
 {
     AvoidancePlan plan;
     plan.beforeDistance = report.distance;
 
-    const int targetIndex = FindControlledRiskObject(report, objects);
-    if (targetIndex < 0)
+    if (targetIndex < 0 || targetIndex >= static_cast<int>(objects.size()))
     {
+        return plan;
+    }
+
+    const int threatIndex = OtherRiskIndex(report, targetIndex);
+    if (!IsDebrisThreat(objects, threatIndex))
+    {
+        plan.action = "Avoidance burn is reserved for debris threats.";
         return plan;
     }
 
@@ -192,7 +161,7 @@ AvoidancePlan BuildAvoidancePlan(const RiskReport &report,
         testObject.angularSpeed = ClampFloat(testObject.angularSpeed * candidate.speedScale, -1.20f, 1.20f);
         RefreshObjectPosition(testObject);
 
-        const RiskReport candidateReport = AnalyzeRisk(testObjects, showDemoObjects, selectedObjectIndex);
+        const RiskReport candidateReport = evaluateRisk(testObjects);
         if (candidateReport.distance > bestReport.distance)
         {
             bestReport = candidateReport;
@@ -214,6 +183,196 @@ AvoidancePlan BuildAvoidancePlan(const RiskReport &report,
     }
 
     return plan;
+}
+} // namespace
+
+const char *RiskLevelText(RiskLevel level)
+{
+    switch (level)
+    {
+    case RiskLevel::High:
+        return "HIGH";
+    case RiskLevel::Medium:
+        return "MEDIUM";
+    case RiskLevel::Low:
+    default:
+        return "LOW";
+    }
+}
+
+RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects)
+{
+    return AnalyzeRisk(objects, true, -1);
+}
+
+RiskReport AnalyzeRisk(const std::vector<OrbitObject> &objects, bool showDemoObjects, int selectedObjectIndex)
+{
+    RiskReport report;
+    report.distance = std::numeric_limits<float>::max();
+
+    if (IsValidVisibleIndex(objects, selectedObjectIndex, showDemoObjects))
+    {
+        for (int j = 0; j < static_cast<int>(objects.size()); ++j)
+        {
+            if (j == selectedObjectIndex || !IsVisibleForRisk(objects[j], showDemoObjects))
+            {
+                continue;
+            }
+
+            const RiskReport pairReport = PredictPairRisk(objects, selectedObjectIndex, j);
+            if (pairReport.distance < report.distance)
+            {
+                report = pairReport;
+            }
+        }
+
+        if (report.firstIndex < 0)
+        {
+            FinalizeRiskReport(report);
+        }
+        return report;
+    }
+
+    for (int i = 0; i < static_cast<int>(objects.size()); ++i)
+    {
+        if (!IsVisibleForRisk(objects[i], showDemoObjects))
+        {
+            continue;
+        }
+
+        for (int j = i + 1; j < static_cast<int>(objects.size()); ++j)
+        {
+            if (!IsVisibleForRisk(objects[j], showDemoObjects))
+            {
+                continue;
+            }
+
+            const RiskReport pairReport = PredictPairRisk(objects, i, j);
+            if (pairReport.distance < report.distance)
+            {
+                report = pairReport;
+            }
+        }
+    }
+
+    if (report.firstIndex < 0)
+    {
+        FinalizeRiskReport(report);
+    }
+    return report;
+}
+
+RiskReport PredictPairRisk(const std::vector<OrbitObject> &objects,
+                           int firstIndex,
+                           int secondIndex,
+                           float horizonSeconds,
+                           float stepSeconds)
+{
+    RiskReport report;
+    if (firstIndex < 0 ||
+        secondIndex < 0 ||
+        firstIndex == secondIndex ||
+        firstIndex >= static_cast<int>(objects.size()) ||
+        secondIndex >= static_cast<int>(objects.size()))
+    {
+        FinalizeRiskReport(report);
+        return report;
+    }
+
+    report.firstIndex = firstIndex < secondIndex ? firstIndex : secondIndex;
+    report.secondIndex = firstIndex < secondIndex ? secondIndex : firstIndex;
+    OrbitObject first = objects[firstIndex];
+    OrbitObject second = objects[secondIndex];
+    report.distance = Vector3Distance(first.position, second.position);
+    report.closestApproachTime = 0.0f;
+    report.predicted = true;
+
+    const float safeHorizonSeconds = SanitizePredictionHorizon(horizonSeconds);
+    const float requestedStepSeconds = SanitizePredictionStep(stepSeconds);
+    int stepCount = safeHorizonSeconds > 0.0f
+                        ? static_cast<int>(std::ceil(safeHorizonSeconds / requestedStepSeconds))
+                        : 0;
+    if (stepCount > kMaxPredictionSteps)
+    {
+        stepCount = kMaxPredictionSteps;
+    }
+    const float actualStepSeconds = stepCount > 0 ? safeHorizonSeconds / static_cast<float>(stepCount) : 0.0f;
+
+    for (int step = 1; step <= stepCount; ++step)
+    {
+        StepOrbitObject(first, actualStepSeconds);
+        StepOrbitObject(second, actualStepSeconds);
+        const float distance = Vector3Distance(first.position, second.position);
+        if (distance < report.distance)
+        {
+            report.distance = distance;
+            report.closestApproachTime = actualStepSeconds * static_cast<float>(step);
+        }
+    }
+
+    FinalizeRiskReport(report);
+    return report;
+}
+
+RiskReport AnalyzePairRisk(const std::vector<OrbitObject> &objects, int firstIndex, int secondIndex)
+{
+    return PredictPairRisk(objects, firstIndex, secondIndex);
+}
+
+int FindControlledRiskObject(const RiskReport &report, const std::vector<OrbitObject> &objects)
+{
+    if (report.firstIndex >= 0 && report.firstIndex < static_cast<int>(objects.size()) && objects[report.firstIndex].userControlled)
+    {
+        return report.firstIndex;
+    }
+    if (report.secondIndex >= 0 && report.secondIndex < static_cast<int>(objects.size()) && objects[report.secondIndex].userControlled)
+    {
+        return report.secondIndex;
+    }
+    return -1;
+}
+
+AvoidancePlan BuildAvoidancePlan(const RiskReport &report, const std::vector<OrbitObject> &objects)
+{
+    return BuildAvoidancePlan(report, objects, true, -1);
+}
+
+AvoidancePlan BuildAvoidancePlan(const RiskReport &report,
+                                 const std::vector<OrbitObject> &objects,
+                                 bool showDemoObjects,
+                                 int selectedObjectIndex)
+{
+    const int targetIndex = FindControlledRiskObject(report, objects);
+    if (targetIndex < 0)
+    {
+        return AvoidancePlan{};
+    }
+
+    return BuildAvoidancePlanWithEvaluator(
+        report,
+        objects,
+        targetIndex,
+        [showDemoObjects, selectedObjectIndex](const std::vector<OrbitObject> &testObjects) {
+            return AnalyzeRisk(testObjects, showDemoObjects, selectedObjectIndex);
+        });
+}
+
+AvoidancePlan BuildAvoidancePlanForThreat(const std::vector<OrbitObject> &objects, int threatIndex)
+{
+    const int playerIndex = FindPlayerSatelliteIndex(objects);
+    if (playerIndex < 0)
+    {
+        return AvoidancePlan{};
+    }
+
+    const RiskReport threatReport = AnalyzePairRisk(objects, playerIndex, threatIndex);
+    return BuildAvoidancePlanWithEvaluator(
+        threatReport,
+        objects,
+        playerIndex,
+        [playerIndex, threatIndex](const std::vector<OrbitObject> &testObjects) {
+            return AnalyzePairRisk(testObjects, playerIndex, threatIndex);
+        });
 }
 
 void ApplyAvoidancePlan(std::vector<OrbitObject> &objects, const AvoidancePlan &plan)

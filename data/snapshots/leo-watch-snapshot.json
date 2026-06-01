@@ -1,0 +1,40 @@
+{
+  "data_mode": "snapshot",
+  "source_updated_at": "2026-05-29T00:00:00Z",
+  "objects": [
+    {
+      "catalog_id": "25544",
+      "name": "ISS (ZARYA)",
+      "object_type": "payload",
+      "activity_status": "active",
+      "epoch": "2026-05-29T00:00:00Z",
+      "mean_motion": 15.49,
+      "eccentricity": 0.0004,
+      "inclination_deg": 51.64,
+      "raan_deg": 20.0,
+      "arg_perigee_deg": 80.0,
+      "mean_anomaly_deg": 10.0,
+      "bstar": 0.0001,
+      "mean_motion_dot": 0.0,
+      "mean_motion_ddot": 0.0,
+      "source": "fixture"
+    },
+    {
+      "catalog_id": "90001",
+      "name": "FIXTURE DEB",
+      "object_type": "debris",
+      "activity_status": "inactive",
+      "epoch": "2026-05-29T00:00:00Z",
+      "mean_motion": 15.50,
+      "eccentricity": 0.0005,
+      "inclination_deg": 51.65,
+      "raan_deg": 20.1,
+      "arg_perigee_deg": 80.0,
+      "mean_anomaly_deg": 10.2,
+      "bstar": 0.0001,
+      "mean_motion_dot": 0.0,
+      "mean_motion_ddot": 0.0,
+      "source": "fixture"
+    }
+  ]
+}

@@ -56,21 +56,42 @@ int PickVisibleObject(const std::vector<OrbitObject> &objects, const Camera3D &c
 
     return bestIndex;
 }
+
+std::string ScanTargetName(const UnknownScanState &scan, const std::vector<OrbitObject> &objects)
+{
+    if (scan.objectIndex >= 0 && scan.objectIndex < static_cast<int>(objects.size()))
+    {
+        return objects[scan.objectIndex].name;
+    }
+    if (!scan.objectName.empty())
+    {
+        return scan.objectName;
+    }
+    return "unknown object";
+}
 } // namespace
 
 int main()
 {
     InitWindow(kScreenWidth, kScreenHeight, "OrbitGuard - 3D Collision Risk Monitor");
+    // Keep ESC available for in-game navigation instead of raylib's default close shortcut.
+    SetExitKey(KEY_NULL);
     SetTargetFPS(60);
 
     Camera3D camera = {};
     camera.fovy = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
+    GameMode gameMode = GameMode::MainMenu;
+    int selectedMenuItem = 0;
     OrbitCameraState cameraState;
     std::vector<OrbitObject> objects = CreateDemoObjects();
     LaunchSettings launchSettings;
     MissionState missionState;
+    EarthMissionState earthMission;
+    ImmediateEventState activeEvent;
+    AvoidanceAnimationState avoidanceAnimation;
+    UnknownScanState unknownScan;
 
     bool paused = false;
     bool shouldClose = false;
@@ -82,11 +103,108 @@ int main()
     bool showDemoObjects = true;
     int selectedObjectIndex = -1;
     std::string actionMessage;
+    ShipState solarShip;
+    ShipState blackHoleShip;
+    bool blackHoleTransferred = false;
+    ResetShip(solarShip, {0.0f, 0.0f, 330.0f}, 0.0f);
+    ResetShip(blackHoleShip, {0.0f, 0.0f, 330.0f}, 0.0f);
 
-    while (!WindowShouldClose() && !shouldClose)
+    auto returnToMainMenu = [&]() {
+        gameMode = GameMode::MainMenu;
+        selectedMenuItem = 0;
+        showLaunchHelp = false;
+        paused = false;
+        actionMessage.clear();
+        actionMessageTimer = 0.0f;
+        exportMessageTimer = 0.0f;
+    };
+
+    while (!shouldClose)
     {
         const float deltaTime = GetFrameTime();
+        const Vector2 mousePosition = GetMousePosition();
+        const bool escapePressed = IsKeyPressed(KEY_ESCAPE);
+        const bool escapeDown = IsKeyDown(KEY_ESCAPE);
+        const bool windowCloseRequested = WindowShouldClose();
+        const GameMode modeBeforeEscapeHandling = gameMode;
+        ApplyEscapeAndWindowClose(gameMode, shouldClose, escapePressed, escapeDown, windowCloseRequested);
+        if (modeBeforeEscapeHandling != GameMode::MainMenu && gameMode == GameMode::MainMenu)
+        {
+            returnToMainMenu();
+        }
+        if (shouldClose || gameMode != modeBeforeEscapeHandling)
+        {
+            continue;
+        }
+        if (gameMode != GameMode::MainMenu &&
+            IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+            IsPointInBackToMenuButton(mousePosition))
+        {
+            returnToMainMenu();
+            continue;
+        }
 
+        if (gameMode == GameMode::MainMenu)
+        {
+            if (IsKeyPressed(KEY_DOWN))
+            {
+                selectedMenuItem = (selectedMenuItem + 1) % 3;
+            }
+            if (IsKeyPressed(KEY_UP))
+            {
+                selectedMenuItem = (selectedMenuItem + 2) % 3;
+            }
+            if (IsKeyPressed(KEY_ONE))
+            {
+                gameMode = GameMode::EarthSpace;
+            }
+            if (IsKeyPressed(KEY_TWO))
+            {
+                gameMode = GameMode::SolarSystem;
+            }
+            if (IsKeyPressed(KEY_THREE))
+            {
+                gameMode = GameMode::BlackHole;
+            }
+            if (IsKeyPressed(KEY_ENTER))
+            {
+                gameMode = selectedMenuItem == 0 ? GameMode::EarthSpace : (selectedMenuItem == 1 ? GameMode::SolarSystem : GameMode::BlackHole);
+            }
+            BeginDrawing();
+            ClearBackground({3, 6, 12, 255});
+            DrawMainMenu(selectedMenuItem);
+            EndDrawing();
+            continue;
+        }
+
+        if (gameMode == GameMode::SolarSystem)
+        {
+            UpdateShipFromInput(solarShip, deltaTime);
+            BeginDrawing();
+            ClearBackground({3, 6, 12, 255});
+            DrawSolarSystemMode(solarShip);
+            DrawBackToMenuButton(mousePosition);
+            EndDrawing();
+            continue;
+        }
+
+        if (gameMode == GameMode::BlackHole)
+        {
+            UpdateShipFromInput(blackHoleShip, deltaTime);
+            if (!blackHoleTransferred && IsInsideBlackHoleTransferRange(blackHoleShip, 130.0f))
+            {
+                blackHoleTransferred = true;
+            }
+            BeginDrawing();
+            ClearBackground({3, 6, 12, 255});
+            DrawBlackHoleMode(blackHoleShip, blackHoleTransferred);
+            DrawBackToMenuButton(mousePosition);
+            EndDrawing();
+            continue;
+        }
+
+        if (gameMode == GameMode::EarthSpace)
+        {
         if (IsKeyPressed(KEY_SPACE))
         {
             paused = !paused;
@@ -96,6 +214,10 @@ int main()
             objects = CreateDemoObjects();
             simulationTime = 0.0f;
             ResetMissionState(missionState);
+            earthMission = EarthMissionState{};
+            ResetImmediateEvent(activeEvent);
+            avoidanceAnimation = AvoidanceAnimationState{};
+            unknownScan = UnknownScanState{};
             selectedObjectIndex = -1;
             exportMessageTimer = 0.0f;
             actionMessage = "Simulation reset. User satellites were cleared.";
@@ -144,36 +266,25 @@ int main()
         }
         if (IsKeyPressed(KEY_L))
         {
-            objects.push_back(CreateUserSatellite(launchSettings));
-            selectedObjectIndex = static_cast<int>(objects.size()) - 1;
+            selectedObjectIndex = UpsertPlayerSatellite(objects, launchSettings);
             MarkMissionLaunched(missionState);
             exportMessageTimer = 0.0f;
-            actionMessage = objects.back().name + " launched into the simulation.";
+            actionMessage = "PlayerSat deployed into " + std::string(OrbitLayerText(ClassifyOrbitLayer(launchSettings.orbitRadius))) + ".";
             actionMessageTimer = 2.4f;
         }
         if (IsKeyPressed(KEY_BACKSPACE))
         {
-            for (int i = static_cast<int>(objects.size()) - 1; i >= 0; --i)
+            const int playerIndex = FindPlayerSatelliteIndex(objects);
+            if (playerIndex >= 0)
             {
-                if (objects[i].userControlled)
-                {
-                    actionMessage = objects[i].name + " removed.";
-                    objects.erase(objects.begin() + i);
-                    if (selectedObjectIndex == i)
-                    {
-                        selectedObjectIndex = -1;
-                    }
-                    else if (selectedObjectIndex > i)
-                    {
-                        selectedObjectIndex--;
-                    }
-                    missionState.hasReviewedRisk = false;
-                    missionState.hasAppliedAvoidance = false;
-                    missionState.hasSavedMissionReport = false;
-                    exportMessageTimer = 0.0f;
-                    actionMessageTimer = 2.4f;
-                    break;
-                }
+                actionMessage = "PlayerSat removed.";
+                objects.erase(objects.begin() + playerIndex);
+                selectedObjectIndex = -1;
+                missionState.hasReviewedRisk = false;
+                missionState.hasAppliedAvoidance = false;
+                missionState.hasSavedMissionReport = false;
+                exportMessageTimer = 0.0f;
+                actionMessageTimer = 2.4f;
             }
         }
 
@@ -182,12 +293,14 @@ int main()
             simulationTime += deltaTime * timeScale;
             UpdateObjects(objects, deltaTime, timeScale);
         }
+        UpdateAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, deltaTime);
+        UpdateUnknownScan(activeEvent, unknownScan, deltaTime);
 
         UpdateOrbitCamera(cameraState, camera);
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !showLaunchHelp)
         {
-            const Vector2 mouse = GetMousePosition();
+            const Vector2 mouse = mousePosition;
             if (IsScenePickArea(mouse))
             {
                 const int pickedIndex = PickVisibleObject(objects, camera, showDemoObjects);
@@ -207,36 +320,83 @@ int main()
         }
 
         RiskReport report = AnalyzeRisk(objects, showDemoObjects, selectedObjectIndex);
-        AvoidancePlan avoidancePlan = BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
+        AvoidancePlan avoidancePlan = activeEvent.type == ImmediateEventType::CollisionWarning
+                                          ? BuildAvoidancePlanForThreat(objects, activeEvent.targetIndex)
+                                          : BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
+        const int objectCountBeforeEventUpdate = static_cast<int>(objects.size());
+        UpdateEarthImmediateEvent(activeEvent, unknownScan, objects, report, deltaTime);
+        if (objectCountBeforeEventUpdate != static_cast<int>(objects.size()) ||
+            activeEvent.type == ImmediateEventType::CollisionWarning)
+        {
+            if (!IsValidVisibleSelection(objects, selectedObjectIndex, showDemoObjects))
+            {
+                selectedObjectIndex = -1;
+            }
+            report = AnalyzeRisk(objects, showDemoObjects, selectedObjectIndex);
+            avoidancePlan = activeEvent.type == ImmediateEventType::CollisionWarning && !activeEvent.playerDestroyed
+                                ? BuildAvoidancePlanForThreat(objects, activeEvent.targetIndex)
+                                : BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
+        }
         UpdateMissionState(missionState, report, avoidancePlan, objects);
+        if (FindPlayerSatelliteIndex(objects) >= 0)
+        {
+            UpdateEarthMissionAfterLaunch(earthMission, objects);
+        }
+        else
+        {
+            UpdateEarthMissionBeforeLaunch(earthMission, launchSettings);
+        }
 
         if (IsKeyPressed(KEY_A))
         {
-            if (avoidancePlan.available)
+            if (activeEvent.type == ImmediateEventType::CollisionWarning)
             {
-                ApplyAvoidancePlan(objects, avoidancePlan);
-                MarkMissionAvoidanceApplied(missionState);
-                report = AnalyzeRisk(objects, showDemoObjects, selectedObjectIndex);
-                avoidancePlan = BuildAvoidancePlan(report, objects, showDemoObjects, selectedObjectIndex);
-                UpdateMissionState(missionState, report, avoidancePlan, objects);
-                actionMessage = "Avoidance applied: user satellite orbit was adjusted.";
-            }
-            else
-            {
-                if (!missionState.hasLaunchedUserSatellite)
+                if (activeEvent.playerDestroyed)
                 {
-                    actionMessage = "Launch a user satellite before applying avoidance.";
+                    actionMessage = activeEvent.result;
                 }
-                else if (report.level == RiskLevel::Low)
+                else if (BeginAvoidanceAnimation(avoidanceAnimation, activeEvent, objects, avoidancePlan))
                 {
-                    actionMessage = "Risk is low. Avoidance is not required.";
+                    MarkMissionAvoidanceApplied(missionState);
+                    actionMessage = "Avoidance burn started.";
                 }
                 else
                 {
-                    actionMessage = "No quick avoidance found. Adjust orbit settings and relaunch.";
+                    actionMessage = activeEvent.result;
                 }
             }
+            else if (activeEvent.type == ImmediateEventType::UnknownObject)
+            {
+                actionMessage = "Active event is an unknown object. Select " + ScanTargetName(unknownScan, objects) + " and press C to scan.";
+            }
+            else
+            {
+                actionMessage = missionState.hasLaunchedUserSatellite ? "No active collision warning." : "Launch PlayerSat before applying avoidance.";
+            }
             actionMessageTimer = 2.8f;
+        }
+
+        if (IsKeyPressed(KEY_C))
+        {
+            if (CanStartUnknownScan(activeEvent, unknownScan, selectedObjectIndex))
+            {
+                BeginUnknownScan(activeEvent, unknownScan);
+                actionMessage = "Scanning " + ScanTargetName(unknownScan, objects) + "...";
+            }
+            else if (unknownScan.identified)
+            {
+                actionMessage = "Object already identified.";
+            }
+            else if (unknownScan.objectActive)
+            {
+                actionMessage = "Select " + ScanTargetName(unknownScan, objects) + " before scanning.";
+            }
+            else
+            {
+                actionMessage = "No unknown object to scan.";
+            }
+            actionMessageTimer = 2.8f;
+            exportMessageTimer = 0.0f;
         }
 
         if (IsKeyPressed(KEY_S))
@@ -268,9 +428,15 @@ int main()
 
         BeginDrawing();
         ClearBackground({3, 6, 12, 255});
-        DrawStarField();
+        DrawSolarSystemBackground();
 
         BeginMode3D(camera);
+        DrawOrbitLayerBands();
+        if (avoidanceAnimation.active)
+        {
+            DrawOrbitPath(avoidanceAnimation.startObject.orbitRadius, avoidanceAnimation.startObject.inclinationDeg, Fade(ORANGE, 0.42f));
+            DrawOrbitPath(avoidanceAnimation.endObject.orbitRadius, avoidanceAnimation.endObject.inclinationDeg, Fade(LIME, 0.46f));
+        }
         DrawGrid(24, 24.0f);
         DrawSphere({0.0f, 0.0f, 0.0f}, kEarthRadius, {31, 108, 188, 255});
         DrawSphereWires({0.0f, 0.0f, 0.0f}, kEarthRadius + 0.5f, 24, 16, Fade(SKYBLUE, 0.45f));
@@ -295,7 +461,7 @@ int main()
         previewObject.angleRad = launchSettings.initialAngleDeg * kDegToRad;
         previewObject.position = CalculateOrbitPosition(previewObject.orbitRadius, previewObject.inclinationDeg, previewObject.angleRad);
         previewObject.color = Fade(YELLOW, 0.65f);
-        DrawSpaceObject(previewObject, true);
+        DrawSpaceObject(previewObject, Fade(YELLOW, 0.75f));
 
         if (report.firstIndex >= 0 && report.secondIndex >= 0)
         {
@@ -309,18 +475,36 @@ int main()
                 continue;
             }
 
-            const bool highlighted = i == selectedObjectIndex || i == report.firstIndex || i == report.secondIndex;
-            DrawSpaceObject(objects[i], highlighted);
+            const Color frameColor = i == selectedObjectIndex ? SelectedFrameColor(activeEvent, earthMission, objects, selectedObjectIndex) : BLANK;
+            DrawSpaceObject(objects[i], frameColor);
+        }
+        if (avoidanceAnimation.active &&
+            avoidanceAnimation.objectIndex >= 0 &&
+            avoidanceAnimation.objectIndex < static_cast<int>(objects.size()))
+        {
+            const Vector3 playerPosition = objects[avoidanceAnimation.objectIndex].position;
+            DrawSphere(playerPosition, 16.0f, Fade(ORANGE, 0.34f));
+            DrawSphereWires(playerPosition, 24.0f, 16, 12, Fade(GOLD, 0.72f));
+        }
+        if (activeEvent.playerDestroyed)
+        {
+            const float fade = 1.0f - ClampFloat(activeEvent.timer / 3.0f, 0.0f, 1.0f);
+            DrawSphere(activeEvent.explosionPosition, 18.0f + 28.0f * (1.0f - fade), Fade(ORANGE, 0.58f * fade));
+            DrawSphereWires(activeEvent.explosionPosition, 34.0f + 20.0f * (1.0f - fade), 18, 12, Fade(RED, 0.82f * fade));
         }
         EndMode3D();
 
-        DrawInfoPanel(report, objects, paused, timeScale, simulationTime, exportMessageTimer, launchSettings, avoidancePlan, missionState, showDemoObjects, selectedObjectIndex, actionMessageTimer, actionMessage);
+        DrawImmediateEventBanner(activeEvent, unknownScan);
+        DrawInfoPanel(report, objects, paused, timeScale, simulationTime, exportMessageTimer, launchSettings, avoidancePlan, missionState, earthMission, activeEvent, unknownScan, showDemoObjects, selectedObjectIndex, actionMessageTimer, actionMessage);
         DrawControls();
         if (showLaunchHelp)
         {
             DrawLaunchHelpOverlay(launchSettings);
         }
+        DrawBackToMenuButton(mousePosition);
         EndDrawing();
+        continue;
+        }
     }
 
     CloseWindow();

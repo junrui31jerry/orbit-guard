@@ -4,8 +4,8 @@
 CPP      = g++.exe
 CC       = gcc.exe
 WINDRES  = windres.exe
-OBJ      = main.o simulation.o risk.o mission.o ui.o
-LINKOBJ  = main.o simulation.o risk.o mission.o ui.o
+OBJ      = main.o simulation.o risk.o mission.o earth_events.o ship_modes.o ui.o
+LINKOBJ  = main.o simulation.o risk.o mission.o earth_events.o ship_modes.o ui.o
 LIBS     = -L"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/lib" -L"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/x86_64-w64-mingw32/lib" -L"C:/Users/user/Documents/orbit guard/raylib/raylib-6.0_win64_mingw-w64/lib" -static-libgcc -lraylibdll -lopengl32 -lgdi32 -lwinmm
 INCS     = -I"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/include" -I"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/x86_64-w64-mingw32/include" -I"C:/Users/user/Documents/orbit guard/include" -I"C:/Users/user/Documents/orbit guard/raylib/raylib-6.0_win64_mingw-w64/include"
 CXXINCS  = -I"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/include" -I"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/x86_64-w64-mingw32/include" -I"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/lib/gcc/x86_64-w64-mingw32/9.2.0/include" -I"C:/Program Files (x86)/Embarcadero/Dev-Cpp/TDM-GCC-64/lib/gcc/x86_64-w64-mingw32/9.2.0/include/c++" -I"C:/Users/user/Documents/orbit guard/include" -I"C:/Users/user/Documents/orbit guard/raylib/raylib-6.0_win64_mingw-w64/include"
@@ -35,6 +35,12 @@ risk.o: src/risk.cpp include/orbit_guard.h
 
 mission.o: src/mission.cpp include/orbit_guard.h
 	$(CPP) -c src/mission.cpp -o mission.o $(CXXFLAGS)
+
+earth_events.o: src/earth_events.cpp include/orbit_guard.h
+	$(CPP) -c src/earth_events.cpp -o earth_events.o $(CXXFLAGS)
+
+ship_modes.o: src/ship_modes.cpp include/orbit_guard.h
+	$(CPP) -c src/ship_modes.cpp -o ship_modes.o $(CXXFLAGS)
 
 ui.o: src/ui.cpp include/orbit_guard.h
 	$(CPP) -c src/ui.cpp -o ui.o $(CXXFLAGS)

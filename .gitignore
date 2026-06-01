@@ -23,8 +23,21 @@ downloads/
 *.docx
 *.pdf
 
+# Python and Web dashboard artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+*.egg-info/
+node_modules/
+dist/
+coverage/
+
 # Local Superpowers/browser session scratch files
 .superpowers/
+.worktrees/
 
 # OS/editor noise
 Thumbs.db
